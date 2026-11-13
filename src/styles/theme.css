@@ -1,0 +1,516 @@
+/* =============================================================================
+   FolderFlow — THEME (single source of truth for ALL visual design)
+   -----------------------------------------------------------------------------
+   Every color, font, size, spacing, radius, border, shadow, motion and z-index
+   used anywhere in the app is defined here. Components must ONLY use these
+   tokens (via Tailwind utilities generated below, or var(--ff-*)).
+
+   ✗ No hex/rgb/hsl literals in components.        enforced by scripts/check-tokens.mjs
+   ✗ No Tailwind palette classes (text-red-500).   enforced by scripts/check-tokens.mjs
+   ✗ No arbitrary values (p-[13px], bg-[#eee]).    enforced by scripts/check-tokens.mjs
+
+   To re-theme the whole app, edit ONLY this file.
+
+   Switching:
+     <html data-theme="light|dark">     explicit; omit attribute = follow system
+     <html data-density="comfortable|compact">
+   See docs/DESIGN_SYSTEM.md
+   ============================================================================= */
+
+@import "tailwindcss";
+
+/* -----------------------------------------------------------------------------
+   1. PRIMITIVES (raw palette — referenced only by semantic tokens below)
+   ----------------------------------------------------------------------------- */
+:root {
+  /* Neutral scale (warm-cool balanced gray, macOS-like) */
+  --ff-gray-0: #ffffff;
+  --ff-gray-25: #fbfbfc;
+  --ff-gray-50: #f6f6f7;
+  --ff-gray-100: #efeff1;
+  --ff-gray-150: #e6e6e9;
+  --ff-gray-200: #dcdce0;
+  --ff-gray-300: #c7c7cc;
+  --ff-gray-400: #a1a1a8;
+  --ff-gray-500: #7c7c84;
+  --ff-gray-600: #5d5d64;
+  --ff-gray-700: #3f3f45;
+  --ff-gray-750: #333338;
+  --ff-gray-800: #2a2a2e;
+  --ff-gray-850: #222225;
+  --ff-gray-900: #1b1b1e;
+  --ff-gray-950: #141416;
+
+  /* Brand accent (calm blue) */
+  --ff-blue-400: #4f9bff;
+  --ff-blue-500: #0a7cff;
+  --ff-blue-600: #0066d6;
+
+  /* Signals */
+  --ff-green-500: #2fa84f;
+  --ff-green-400: #3dc265;
+  --ff-amber-500: #c98a00;
+  --ff-amber-400: #f0b429;
+  --ff-red-500: #d93b30;
+  --ff-red-400: #ff5f57;
+}
+
+/* -----------------------------------------------------------------------------
+   2. SEMANTIC TOKENS — LIGHT (default)
+   ----------------------------------------------------------------------------- */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --ff-bg: var(--ff-gray-0);                 /* main content background */
+  --ff-bg-sidebar: var(--ff-gray-50);        /* sidebar */
+  --ff-bg-subtle: var(--ff-gray-25);         /* table header, inset areas */
+  --ff-bg-muted: var(--ff-gray-100);         /* inputs, chips */
+  --ff-bg-hover: rgb(0 0 0 / 0.04);
+  --ff-bg-active: rgb(0 0 0 / 0.07);
+  --ff-bg-selected: rgb(10 124 255 / 0.10);
+  --ff-bg-overlay: rgb(0 0 0 / 0.32);        /* dialog scrim */
+  --ff-bg-popover: var(--ff-gray-0);
+
+  /* Text */
+  --ff-fg: #1d1d1f;
+  --ff-fg-muted: #5f5f66;
+  --ff-fg-subtle: #8a8a91;
+  --ff-fg-disabled: #b4b4ba;
+  --ff-fg-on-accent: #ffffff;
+
+  /* Borders */
+  --ff-border: var(--ff-gray-150);
+  --ff-border-strong: var(--ff-gray-300);
+  --ff-border-focus: var(--ff-blue-500);
+
+  /* Accent */
+  --ff-accent: var(--ff-blue-500);
+  --ff-accent-hover: var(--ff-blue-600);
+  --ff-accent-subtle: rgb(10 124 255 / 0.10);
+  --ff-accent-fg: var(--ff-blue-600);        /* accent-colored text/links */
+
+  /* Status */
+  --ff-success: var(--ff-green-500);
+  --ff-success-subtle: rgb(47 168 79 / 0.12);
+  --ff-warning: var(--ff-amber-500);
+  --ff-warning-subtle: rgb(201 138 0 / 0.13);
+  --ff-danger: var(--ff-red-500);
+  --ff-danger-hover: #c02f25;
+  --ff-danger-subtle: rgb(217 59 48 / 0.10);
+  --ff-info: var(--ff-blue-500);
+  --ff-info-subtle: rgb(10 124 255 / 0.10);
+
+  /* Monitoring status dot */
+  --ff-status-active: var(--ff-green-500);
+  --ff-status-paused: var(--ff-amber-500);
+  --ff-status-error: var(--ff-red-500);
+  --ff-status-idle: var(--ff-gray-400);
+
+  /* File categories (used by CategoryBadge, storage chart) */
+  --ff-cat-documents: #3b6fd4;
+  --ff-cat-images: #c2410c;
+  --ff-cat-videos: #9333ea;
+  --ff-cat-audio: #db2777;
+  --ff-cat-archives: #a16207;
+  --ff-cat-spreadsheets: #15803d;
+  --ff-cat-presentations: #ea580c;
+  --ff-cat-installers: #4b5563;
+  --ff-cat-design: #c026d3;
+  --ff-cat-development: #0e7490;
+  --ff-cat-fonts: #6d28d9;
+  --ff-cat-ebooks: #b45309;
+  --ff-cat-other: #71717a;
+
+  /* Elevation (used sparingly: popovers, dialogs, menus only) */
+  --ff-shadow-popover: 0 4px 16px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.05);
+  --ff-shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.16), 0 0 0 1px rgb(0 0 0 / 0.06);
+
+  /* Focus ring */
+  --ff-ring: rgb(10 124 255 / 0.45);
+}
+
+/* -----------------------------------------------------------------------------
+   3. SEMANTIC TOKENS — DARK
+   Applied when data-theme="dark", or when no data-theme and the OS is dark.
+   NOTE: the system-dark block below must mirror this block exactly
+   (verified by scripts/check-tokens.mjs, test UI-THEME-05). `light-dark()` is
+   not used because macOS 13 WebKit may predate it.
+   ----------------------------------------------------------------------------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ff-bg: var(--ff-gray-900);
+  --ff-bg-sidebar: var(--ff-gray-850);
+  --ff-bg-subtle: var(--ff-gray-850);
+  --ff-bg-muted: var(--ff-gray-800);
+  --ff-bg-hover: rgb(255 255 255 / 0.05);
+  --ff-bg-active: rgb(255 255 255 / 0.08);
+  --ff-bg-selected: rgb(79 155 255 / 0.18);
+  --ff-bg-overlay: rgb(0 0 0 / 0.55);
+  --ff-bg-popover: var(--ff-gray-800);
+
+  --ff-fg: #f2f2f4;
+  --ff-fg-muted: #a6a6ae;
+  --ff-fg-subtle: #7d7d85;
+  --ff-fg-disabled: #55555b;
+  --ff-fg-on-accent: #ffffff;
+
+  --ff-border: rgb(255 255 255 / 0.08);
+  --ff-border-strong: rgb(255 255 255 / 0.16);
+  --ff-border-focus: var(--ff-blue-400);
+
+  --ff-accent: var(--ff-blue-500);
+  --ff-accent-hover: var(--ff-blue-400);
+  --ff-accent-subtle: rgb(79 155 255 / 0.16);
+  --ff-accent-fg: var(--ff-blue-400);
+
+  --ff-success: var(--ff-green-400);
+  --ff-success-subtle: rgb(61 194 101 / 0.15);
+  --ff-warning: var(--ff-amber-400);
+  --ff-warning-subtle: rgb(240 180 41 / 0.15);
+  --ff-danger: var(--ff-red-400);
+  --ff-danger-hover: #ff7b74;
+  --ff-danger-subtle: rgb(255 95 87 / 0.15);
+  --ff-info: var(--ff-blue-400);
+  --ff-info-subtle: rgb(79 155 255 / 0.15);
+
+  --ff-status-active: var(--ff-green-400);
+  --ff-status-paused: var(--ff-amber-400);
+  --ff-status-error: var(--ff-red-400);
+  --ff-status-idle: var(--ff-gray-500);
+
+  --ff-cat-documents: #7aa2f7;
+  --ff-cat-images: #fb923c;
+  --ff-cat-videos: #c084fc;
+  --ff-cat-audio: #f472b6;
+  --ff-cat-archives: #facc15;
+  --ff-cat-spreadsheets: #4ade80;
+  --ff-cat-presentations: #fdba74;
+  --ff-cat-installers: #9ca3af;
+  --ff-cat-design: #e879f9;
+  --ff-cat-development: #22d3ee;
+  --ff-cat-fonts: #a78bfa;
+  --ff-cat-ebooks: #fbbf24;
+  --ff-cat-other: #a1a1aa;
+
+  --ff-shadow-popover: 0 4px 16px rgb(0 0 0 / 0.40), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --ff-shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.08);
+  --ff-ring: rgb(79 155 255 / 0.55);
+}
+
+/* System mode: no data-theme attribute → follow OS. Values mirror [data-theme="dark"]. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --ff-bg: var(--ff-gray-900);
+    --ff-bg-sidebar: var(--ff-gray-850);
+    --ff-bg-subtle: var(--ff-gray-850);
+    --ff-bg-muted: var(--ff-gray-800);
+    --ff-bg-hover: rgb(255 255 255 / 0.05);
+    --ff-bg-active: rgb(255 255 255 / 0.08);
+    --ff-bg-selected: rgb(79 155 255 / 0.18);
+    --ff-bg-overlay: rgb(0 0 0 / 0.55);
+    --ff-bg-popover: var(--ff-gray-800);
+    --ff-fg: #f2f2f4;
+    --ff-fg-muted: #a6a6ae;
+    --ff-fg-subtle: #7d7d85;
+    --ff-fg-disabled: #55555b;
+    --ff-fg-on-accent: #ffffff;
+    --ff-border: rgb(255 255 255 / 0.08);
+    --ff-border-strong: rgb(255 255 255 / 0.16);
+    --ff-border-focus: var(--ff-blue-400);
+    --ff-accent: var(--ff-blue-500);
+    --ff-accent-hover: var(--ff-blue-400);
+    --ff-accent-subtle: rgb(79 155 255 / 0.16);
+    --ff-accent-fg: var(--ff-blue-400);
+    --ff-success: var(--ff-green-400);
+    --ff-success-subtle: rgb(61 194 101 / 0.15);
+    --ff-warning: var(--ff-amber-400);
+    --ff-warning-subtle: rgb(240 180 41 / 0.15);
+    --ff-danger: var(--ff-red-400);
+    --ff-danger-hover: #ff7b74;
+    --ff-danger-subtle: rgb(255 95 87 / 0.15);
+    --ff-info: var(--ff-blue-400);
+    --ff-info-subtle: rgb(79 155 255 / 0.15);
+    --ff-status-active: var(--ff-green-400);
+    --ff-status-paused: var(--ff-amber-400);
+    --ff-status-error: var(--ff-red-400);
+    --ff-status-idle: var(--ff-gray-500);
+    --ff-cat-documents: #7aa2f7;
+    --ff-cat-images: #fb923c;
+    --ff-cat-videos: #c084fc;
+    --ff-cat-audio: #f472b6;
+    --ff-cat-archives: #facc15;
+    --ff-cat-spreadsheets: #4ade80;
+    --ff-cat-presentations: #fdba74;
+    --ff-cat-installers: #9ca3af;
+    --ff-cat-design: #e879f9;
+    --ff-cat-development: #22d3ee;
+    --ff-cat-fonts: #a78bfa;
+    --ff-cat-ebooks: #fbbf24;
+    --ff-cat-other: #a1a1aa;
+    --ff-shadow-popover: 0 4px 16px rgb(0 0 0 / 0.40), 0 0 0 1px rgb(255 255 255 / 0.06);
+    --ff-shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.08);
+    --ff-ring: rgb(79 155 255 / 0.55);
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   4. TYPOGRAPHY, SHAPE, MOTION, LAYOUT (theme-independent)
+   ----------------------------------------------------------------------------- */
+:root {
+  --ff-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --ff-font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, sans-serif;
+  --ff-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Type scale (macOS-like, tight) */
+  --ff-text-2xs: 0.6875rem;  /* 11 */
+  --ff-text-xs: 0.75rem;     /* 12 */
+  --ff-text-sm: 0.8125rem;   /* 13 — default body, matches macOS */
+  --ff-text-base: 0.875rem;  /* 14 */
+  --ff-text-lg: 1rem;        /* 16 */
+  --ff-text-xl: 1.25rem;     /* 20 — page titles */
+  --ff-text-2xl: 1.625rem;   /* 26 — stat numbers */
+  --ff-text-3xl: 2rem;       /* 32 — onboarding hero */
+
+  --ff-leading-tight: 1.25;
+  --ff-leading-normal: 1.45;
+
+  --ff-weight-regular: 400;
+  --ff-weight-medium: 500;
+  --ff-weight-semibold: 600;
+  --ff-weight-bold: 700;
+
+  --ff-tracking-tight: -0.01em;
+
+  /* Radii — small, flat */
+  --ff-radius-xs: 3px;
+  --ff-radius-sm: 4px;
+  --ff-radius-md: 6px;
+  --ff-radius-lg: 8px;
+  --ff-radius-xl: 12px;
+  --ff-radius-full: 9999px;
+
+  --ff-border-width: 1px;
+
+  /* Motion */
+  --ff-duration-fast: 100ms;
+  --ff-duration-base: 160ms;
+  --ff-duration-slow: 240ms;
+  --ff-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layout */
+  --ff-sidebar-width: 220px;
+  --ff-header-height: 52px;
+  --ff-titlebar-inset: 28px;     /* space for macOS traffic lights */
+  --ff-content-max: 1200px;
+
+  /* Z-index */
+  --ff-z-sticky: 10;
+  --ff-z-dropdown: 40;
+  --ff-z-overlay: 50;
+  --ff-z-dialog: 60;
+  --ff-z-toast: 70;
+  --ff-z-tooltip: 80;
+}
+
+/* Density: comfortable (default) */
+:root,
+:root[data-density="comfortable"] {
+  --ff-space-unit: 4px;          /* Tailwind spacing base: p-2 = 8px */
+  --ff-row-height: 36px;         /* table rows, list items */
+  --ff-control-height: 30px;     /* buttons, inputs */
+  --ff-control-height-sm: 24px;
+  --ff-page-padding: 24px;
+}
+:root[data-density="compact"] {
+  --ff-space-unit: 3px;
+  --ff-row-height: 28px;
+  --ff-control-height: 26px;
+  --ff-control-height-sm: 22px;
+  --ff-page-padding: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ff-duration-fast: 0ms;
+    --ff-duration-base: 0ms;
+    --ff-duration-slow: 0ms;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   5. TAILWIND v4 MAPPING — tokens → utilities
+   e.g. bg-surface, bg-sidebar, text-fg-muted, border-border, bg-accent,
+        text-cat-images, rounded-md, text-sm, h-control, h-row, shadow-popover
+   Default Tailwind palette is disabled so only these tokens exist.
+   ----------------------------------------------------------------------------- */
+@theme inline {
+  --color-*: initial;            /* remove Tailwind's default palette */
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-surface: var(--ff-bg);
+  --color-sidebar: var(--ff-bg-sidebar);
+  --color-subtle: var(--ff-bg-subtle);
+  --color-muted: var(--ff-bg-muted);
+  --color-hover: var(--ff-bg-hover);
+  --color-active: var(--ff-bg-active);
+  --color-selected: var(--ff-bg-selected);
+  --color-overlay: var(--ff-bg-overlay);
+  --color-popover: var(--ff-bg-popover);
+
+  --color-fg: var(--ff-fg);
+  --color-fg-muted: var(--ff-fg-muted);
+  --color-fg-subtle: var(--ff-fg-subtle);
+  --color-fg-disabled: var(--ff-fg-disabled);
+  --color-fg-on-accent: var(--ff-fg-on-accent);
+
+  --color-border: var(--ff-border);
+  --color-border-strong: var(--ff-border-strong);
+  --color-border-focus: var(--ff-border-focus);
+  --color-ring: var(--ff-ring);
+
+  --color-accent: var(--ff-accent);
+  --color-accent-hover: var(--ff-accent-hover);
+  --color-accent-subtle: var(--ff-accent-subtle);
+  --color-accent-fg: var(--ff-accent-fg);
+
+  --color-success: var(--ff-success);
+  --color-success-subtle: var(--ff-success-subtle);
+  --color-warning: var(--ff-warning);
+  --color-warning-subtle: var(--ff-warning-subtle);
+  --color-danger: var(--ff-danger);
+  --color-danger-hover: var(--ff-danger-hover);
+  --color-danger-subtle: var(--ff-danger-subtle);
+  --color-info: var(--ff-info);
+  --color-info-subtle: var(--ff-info-subtle);
+
+  --color-status-active: var(--ff-status-active);
+  --color-status-paused: var(--ff-status-paused);
+  --color-status-error: var(--ff-status-error);
+  --color-status-idle: var(--ff-status-idle);
+
+  --color-cat-documents: var(--ff-cat-documents);
+  --color-cat-images: var(--ff-cat-images);
+  --color-cat-videos: var(--ff-cat-videos);
+  --color-cat-audio: var(--ff-cat-audio);
+  --color-cat-archives: var(--ff-cat-archives);
+  --color-cat-spreadsheets: var(--ff-cat-spreadsheets);
+  --color-cat-presentations: var(--ff-cat-presentations);
+  --color-cat-installers: var(--ff-cat-installers);
+  --color-cat-design: var(--ff-cat-design);
+  --color-cat-development: var(--ff-cat-development);
+  --color-cat-fonts: var(--ff-cat-fonts);
+  --color-cat-ebooks: var(--ff-cat-ebooks);
+  --color-cat-other: var(--ff-cat-other);
+
+  /* shadcn/ui compatibility aliases (so generated components resolve to our tokens) */
+  --color-background: var(--ff-bg);
+  --color-foreground: var(--ff-fg);
+  --color-card: var(--ff-bg);
+  --color-card-foreground: var(--ff-fg);
+  --color-popover-foreground: var(--ff-fg);
+  --color-primary: var(--ff-accent);
+  --color-primary-foreground: var(--ff-fg-on-accent);
+  --color-secondary: var(--ff-bg-muted);
+  --color-secondary-foreground: var(--ff-fg);
+  --color-muted-foreground: var(--ff-fg-muted);
+  --color-accent-foreground: var(--ff-fg);
+  --color-destructive: var(--ff-danger);
+  --color-destructive-foreground: var(--ff-fg-on-accent);
+  --color-input: var(--ff-border-strong);
+
+  --font-sans: var(--ff-font-sans);
+  --font-display: var(--ff-font-display);
+  --font-mono: var(--ff-font-mono);
+
+  --text-2xs: var(--ff-text-2xs);
+  --text-xs: var(--ff-text-xs);
+  --text-sm: var(--ff-text-sm);
+  --text-base: var(--ff-text-base);
+  --text-lg: var(--ff-text-lg);
+  --text-xl: var(--ff-text-xl);
+  --text-2xl: var(--ff-text-2xl);
+  --text-3xl: var(--ff-text-3xl);
+
+  --radius-xs: var(--ff-radius-xs);
+  --radius-sm: var(--ff-radius-sm);
+  --radius-md: var(--ff-radius-md);
+  --radius-lg: var(--ff-radius-lg);
+  --radius-xl: var(--ff-radius-xl);
+
+  --shadow-*: initial;
+  --shadow-popover: var(--ff-shadow-popover);
+  --shadow-dialog: var(--ff-shadow-dialog);
+
+  --spacing: var(--ff-space-unit);
+  --spacing-row: var(--ff-row-height);
+  --spacing-control: var(--ff-control-height);
+  --spacing-control-sm: var(--ff-control-height-sm);
+  --spacing-sidebar: var(--ff-sidebar-width);
+  --spacing-header: var(--ff-header-height);
+  --spacing-page: var(--ff-page-padding);
+  --container-content: var(--ff-content-max);
+
+  --ease-ff: var(--ff-ease);
+  --animate-duration-fast: var(--ff-duration-fast);
+}
+
+/* -----------------------------------------------------------------------------
+   6. BASE
+   ----------------------------------------------------------------------------- */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--ff-bg);
+    color: var(--ff-fg);
+    font-family: var(--ff-font-sans);
+    font-size: var(--ff-text-sm);
+    line-height: var(--ff-leading-normal);
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;      /* desktop app feel; enable on text content */
+    user-select: none;
+    cursor: default;
+  }
+  input,
+  textarea,
+  [contenteditable],
+  .ff-selectable {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  *,
+  *::before,
+  *::after {
+    border-color: var(--ff-border);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ff-border-focus);
+    outline-offset: 1px;
+    border-radius: var(--ff-radius-sm);
+  }
+  ::selection {
+    background: var(--ff-accent-subtle);
+  }
+  /* Thin native-like scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--ff-border-strong);
+    border-radius: var(--ff-radius-full);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
