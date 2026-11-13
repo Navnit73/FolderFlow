@@ -12,7 +12,7 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-export function ErrorState({ error, onRetry }: { error: UiError; onRetry?: () => void }) {
+export function ErrorState({ error, onRetry, onDismiss }: { error: UiError; onRetry?: () => void; onDismiss?: () => void }) {
   return (
     <div role="alert" className="flex items-start gap-3 rounded-md border border-border bg-danger-subtle p-4 text-sm">
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
@@ -23,6 +23,11 @@ export function ErrorState({ error, onRetry }: { error: UiError; onRetry?: () =>
       {onRetry && (
         <Button size="sm" onClick={onRetry}>
           Try again
+        </Button>
+      )}
+      {onDismiss && (
+        <Button size="sm" variant="ghost" onClick={onDismiss}>
+          Dismiss
         </Button>
       )}
     </div>

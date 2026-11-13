@@ -63,16 +63,22 @@ Test function names embed the ID in lowercase snake case so `cargo test r_move_`
 
 Added during Phase 1: R-DB-05 (CHECK constraints), R-SET-04 (corrupt section → defaults), R-SET-05 (unknown/missing fields tolerated), R-SEC-01b (strict CSP), R-LOG-02b (home → `~`), BUG-004 store race, BUG-007 log filter, App bootstrap load/error, About retry, `cn` merge rules, check-tokens allow-list cases.
 
-### Phase 2 — Filesystem engine (34)
-R-PATH-01..08 normalization, `..` rejection, root containment, symlink parent rejection, unicode NFC/NFD equivalence, case-insensitive APFS handling, trailing slash, proptest: no generated path escapes root ·
-R-FOLD-01..04 · R-PERM-01..02 (EACCES → permission_denied health) ·
-R-SCAN-01..07 counts, recursion flag, exclusions, ignore list, symlink loop terminates, `.app` not traversed, bounded memory on 50k entries ·
-R-CLS-01..08 each built-in category, signature beats wrong extension → Other, empty file, unknown ·
-R-CAT-01..03 · R-WATCH-01..05 create/modify/rename/delete/dir-create detected (eventual) ·
-R-STAB-01..04 growing file not emitted; stable emitted after N checks; `.crdownload` never emitted; rename-on-complete emitted once ·
-R-RECON-01..03 missed event recovered; deleted file record removed; restart reconciles ·
-R-SUP-01..04 watcher error → restart w/ backoff; folder deleted → unavailable; folder re-created → resume; volume unmount simulation ·
-UI-FOLD-01..04
+### Phase 2 — Filesystem engine (91 implemented)
+| Area | Tests |
+|---|---|
+| Path authority | R-PATH-01..08, R-PATH-08b, R-PATH proptest (512 cases: no generated path escapes the root) |
+| Classifier / categories | R-CLS-01..08, R-CAT-01, R-CAT-02, R-CAT-02b, R-CAT-03, R-CAT-03b |
+| Read-only FS view | fs_view: kinds/hidden/identity, bounded header read refuses symlinks and FIFOs |
+| Ignore rules | always-ignored names & partial downloads, hidden/temp by setting, cache/excluded dirs pruned, include/exclude extensions |
+| Scanner | R-SCAN-01..09 (counts & categories, non-recursive, exclusions, ignore list, symlink loops, packages, 500-item batches, unreadable subfolder, missing root) |
+| Folder registry / permissions | R-FOLD-01..05, R-PERM-01..02 |
+| Reconcile | R-RECON-01..04 |
+| Debounce / stability (pure) | debounce dedupe + overflow, R-STAB-01..04 + capacity |
+| Live monitor (real FSEvents, temp dirs) | R-WATCH-01..06, R-STAB-05 (growing download → once, after rename), R-SUP-01 (start failures + backoff), R-SUP-02/03 (deleted → unavailable → recreated), R-SUP-04 (moved away/back + permission revoked/restored), pause/resume, global pause, overflow → reconcile loses nothing, rescan, 3 folders at once, **zero filesystem writes snapshot** |
+| Regression | BUG-008, BUG-009, BUG-010, BUG-011, BUG-012, BUG-013 |
+| UI | UI-FOLD-01..04 (+ error/retry, picker cancel, field errors, System Settings link), format helpers, migrated shell/App tests |
+
+**Watcher tests are timing-sensitive by nature.** They use bounded waits (15 s), fast timing, and real FSEvents. Every phase audit runs the full Rust suite ≥ 10 times; any failure is investigated as a bug (BUG-013 was found this way), never retried away.
 
 ### Phase 3 — Rule engine (40)
 R-RULE-01..06 · R-COND-01..15 (every operator family, tz-aware dates via FixedClock, DST boundaries) · R-GRP-01..05 (proptest: `Not(Not(x)) == x`, De Morgan equivalence, empty All = true / empty Any = false, depth limit) · R-VAL-01..06 · R-TPL-01..08 (proptest: output never contains `..`, `/` from variables, NUL, `:`; length limits; inside root) · R-EVAL-01..06 (priority, each execution mode, apply-rule cycle detected, per-pass move limit) · R-TMPL-01..03 (presets valid + disabled) · UI-RULES-01..03 · UI-RB-01..06 (add/remove/nest/reorder conditions, validation errors shown, template preview calls Rust)

@@ -3,14 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "@/bindings";
+import { resetBindingMocks } from "@/test/mockBindings";
 import { useSettings } from "@/stores/settings";
 import { appInfoFixture, defaultSettings } from "@/test/fixtures";
 import { NAV_ITEMS } from "./navigation";
 import { routes } from "./routes";
 
-vi.mock("@/bindings", () => ({
-  commands: { settingsGet: vi.fn(), settingsUpdate: vi.fn(), appInfo: vi.fn() },
-}));
+vi.mock("@/bindings", () => import("@/test/mockBindings"));
 
 const mocked = vi.mocked(commands);
 
@@ -23,6 +22,7 @@ async function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  resetBindingMocks();
   mocked.settingsGet.mockResolvedValue({ status: "ok", data: defaultSettings() });
   mocked.settingsUpdate.mockImplementation(async (s) => ({ status: "ok", data: s as ReturnType<typeof defaultSettings> }));
   mocked.appInfo.mockResolvedValue({ status: "ok", data: appInfoFixture });
@@ -43,8 +43,10 @@ describe("UI-SHELL-01 sidebar navigation", () => {
 
   it("redirects / and unknown routes to the first available screen", async () => {
     const router = await renderAt("/does-not-exist");
-    expect(router.state.location.pathname).toBe("/settings/appearance");
-    expect(screen.getByRole("link", { name: /Settings/ })).toHaveAttribute("aria-current", "page");
+    expect(router.state.location.pathname).toBe("/folders");
+    expect(screen.getByRole("link", { name: /Folders/ })).toHaveAttribute("aria-current", "page");
+    const root = await renderAt("/");
+    expect(root.state.location.pathname).toBe("/folders");
   });
 
   it("navigates between settings sections", async () => {

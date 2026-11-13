@@ -4,6 +4,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: SemVer.
 
 ## [Unreleased]
 
+### Added — Phase 2 (Filesystem engine)
+- Folders screen: add Downloads/Desktop/Documents/Pictures/Movies/Music or any folder via the native picker; live status (Watching, Paused, Unavailable, No access, Error); pause/resume/rescan per folder and globally; remove (files untouched); detail page with per-category storage, settings (name, enabled, include subfolders, skip/only extensions, skipped subfolders, stability override) and recent problems; "Open System Settings" when access is missing.
+- Sidebar monitoring indicator.
+- Rust engine (read-only): path authority with symlink/traversal protection and forbidden system roots; extension + content-signature classifier with 13 built-in categories and custom categories; scanner with ignore rules, packages as single items, bounded batches; FSEvents watcher with debounce, stability checks, reconciliation, supervisor with backoff and health states; migration 0002.
+- Info.plist purpose strings for folder-access prompts.
+
+### Fixed — Phase 2 audit
+- BUG-008 … BUG-013 (see docs/BUGS.md), including two cases where existing files could later have been treated as new.
+
 ### Added — Phase 1 (Foundation)
 - Tauri 2 app (`com.folderflow.desktop`) with React 19, TypeScript 6 (strict), Vite 8, Tailwind 4, Zustand, React Router.
 - Single theme file `src/styles/theme.css` drives all UI; `pnpm check:tokens` enforces it (no hardcoded colors/sizes, dark/system parity).

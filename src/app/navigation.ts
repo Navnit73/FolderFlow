@@ -23,7 +23,7 @@ export interface NavItem {
 /** Sidebar order per docs/DESIGN_SYSTEM.md §5. Flip `available` when a screen ships. */
 export const NAV_ITEMS: NavItem[] = [
   { id: "overview", label: "Overview", path: "/overview", icon: LayoutDashboard, available: false },
-  { id: "folders", label: "Folders", path: "/folders", icon: FolderOpen, available: false },
+  { id: "folders", label: "Folders", path: "/folders", icon: FolderOpen, available: true },
   { id: "rules", label: "Rules", path: "/rules", icon: ListChecks, available: false },
   { id: "preview", label: "Preview", path: "/preview", icon: Eye, available: false },
   { id: "activity", label: "Activity", path: "/activity", icon: Activity, available: false },

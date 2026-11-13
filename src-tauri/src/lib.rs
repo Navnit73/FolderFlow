@@ -4,17 +4,25 @@
 //! Logic lives in the modules (docs/ARCHITECTURE.md §3–4).
 
 mod app_state;
+pub mod categories;
 pub mod commands;
 pub mod database;
+pub mod engine;
 pub mod error;
+pub mod events;
+pub mod folders;
 pub mod logging;
 pub mod security;
 pub mod settings;
+pub mod system;
 pub mod utils;
+
+#[cfg(test)]
+pub(crate) mod test_support;
 
 use specta_typescript::Typescript;
 use tauri::Manager;
-use tauri_specta::{collect_commands, Builder, ErrorHandlingMode};
+use tauri_specta::{collect_commands, collect_events, Builder, ErrorHandlingMode};
 
 /// All commands exposed to the frontend. Adding a command here (and
 /// regenerating bindings with `pnpm bindings`) is the only way to expose it.
@@ -24,6 +32,24 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::app::app_info,
             commands::settings::settings_get,
             commands::settings::settings_update,
+            commands::folders::folders_list,
+            commands::folders::folders_add_with_picker,
+            commands::folders::folders_add_known,
+            commands::folders::folders_update,
+            commands::folders::folders_remove,
+            commands::folders::folders_action,
+            commands::folders::folders_pick_subfolder,
+            commands::folders::folders_summary,
+            commands::folders::folders_errors,
+            commands::folders::folders_access,
+            commands::folders::open_privacy_settings,
+            commands::monitoring::monitoring_status,
+            commands::monitoring::monitoring_set_paused,
+            commands::monitoring::categories_list,
+        ])
+        .events(collect_events![
+            events::FolderStatusEvent,
+            events::FolderActivityEvent
         ])
         .error_handling(ErrorHandlingMode::Result)
 }
@@ -39,6 +65,7 @@ pub fn run() {
     let builder = specta_builder();
 
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);

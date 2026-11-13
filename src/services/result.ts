@@ -1,6 +1,7 @@
 import type { UiError } from "@/types/settings";
 
 type CommandResult<T> = { status: "ok"; data: T } | { status: "error"; error: UiError };
+// Commands returning `()` in Rust resolve to `null`.
 
 export class CommandError extends Error {
   readonly ui: UiError;

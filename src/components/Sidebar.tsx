@@ -1,6 +1,26 @@
 import { NavLink } from "react-router";
 import { NAV_ITEMS } from "@/app/navigation";
 import { cn } from "@/lib/cn";
+import { folderStatus } from "@/lib/folderStatus";
+import { useFolders } from "@/stores/folders";
+import { StatusDot } from "./StatusDot";
+
+/** Overall monitoring indicator for the sidebar footer. */
+function MonitoringIndicator() {
+  const { folders, runtime, paused, status } = useFolders();
+  if (status !== "ready") return null;
+  const active = folders.filter((f) => f.enabled);
+  let view: { tone: "active" | "paused" | "error" | "idle"; label: string };
+  if (active.length === 0) view = { tone: "idle", label: "No folders monitored" };
+  else if (paused) view = { tone: "paused", label: "Monitoring paused" };
+  else if (active.some((f) => folderStatus(f, runtime[f.id]).tone === "error")) view = { tone: "error", label: "Needs attention" };
+  else view = { tone: "active", label: "Monitoring" };
+  return (
+    <div className="border-t border-border px-4 py-3 text-fg-muted">
+      <StatusDot tone={view.tone} label={view.label} className="text-xs" />
+    </div>
+  );
+}
 
 export function Sidebar() {
   return (
@@ -36,6 +56,7 @@ export function Sidebar() {
           ),
         )}
       </nav>
+      <MonitoringIndicator />
     </aside>
   );
 }

@@ -11,6 +11,11 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   clearScreen: false,
+  // Pre-bundle Tauri API modules so Vite never re-optimizes and reloads the
+  // page mid-startup (that aborted in-flight IPC calls in dev; ENV-002).
+  optimizeDeps: {
+    include: ["@tauri-apps/api/core", "@tauri-apps/api/event", "@tauri-apps/api/webview", "@tauri-apps/api/window"],
+  },
   server: {
     port: 1420,
     strictPort: true,

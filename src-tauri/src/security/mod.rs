@@ -53,6 +53,29 @@ mod config_tests {
         assert_eq!(conf["app"]["security"]["freezePrototype"], true);
     }
 
+    /// BUG-011: macOS shows these strings in folder-access prompts (FR-002/003).
+    #[test]
+    fn bug_011_info_plist_explains_every_folder_permission() {
+        let plist = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Info.plist"))
+            .unwrap_or_default();
+        for key in [
+            "NSDownloadsFolderUsageDescription",
+            "NSDesktopFolderUsageDescription",
+            "NSDocumentsFolderUsageDescription",
+            "NSRemovableVolumesUsageDescription",
+            "NSNetworkVolumesUsageDescription",
+        ] {
+            assert!(
+                plist.contains(&format!("<key>{key}</key>")),
+                "Info.plist is missing {key}"
+            );
+        }
+        assert!(
+            plist.contains("never leave your Mac"),
+            "purpose strings must state files stay local"
+        );
+    }
+
     #[test]
     fn r_sec_02_clippy_bans_dangerous_fs_and_process_calls() {
         for path in [
@@ -65,6 +88,9 @@ mod config_tests {
             "tokio::fs::rename",
             "tokio::fs::remove_file",
             "std::process::Command::new",
+            "std::fs::set_permissions",
+            "std::fs::hard_link",
+            "std::os::unix::fs::symlink",
         ] {
             assert!(
                 CLIPPY_TOML.contains(&format!("path = \"{path}\"")),

@@ -3,7 +3,7 @@
 > **This file is the source of truth for progress.** Update it in the same change as the code.
 > Requirements live in [PRD.md](PRD.md). Test IDs are defined in [TESTING_STRATEGY.md](TESTING_STRATEGY.md). Audits live in [audits/](audits/).
 
-**Last updated:** 2026-11-13 · **Current phase:** Phase 1 — Foundation (complete) → next: Phase 2
+**Last updated:** 2026-11-13 · **Current phase:** Phase 2 — Filesystem engine (complete) → next: Phase 3
 
 ## Status legend
 
@@ -22,7 +22,7 @@
 |---|---|---|---|---|---|
 | 0 | Planning & docs | ✅ | n/a | [phase-0](audits/phase-0.md) ✅ | 2026-11-13 |
 | 1 | Foundation | ✅ | 62 / 62 (24 Rust · 38 TS) | [phase-1](audits/phase-1.md) ✅ | 2026-11-13 |
-| 2 | Filesystem engine | ⬜ | 0 / 34 | ⬜ | — |
+| 2 | Filesystem engine | ✅ | 91 / 91 (77 Rust · 14 TS) | [phase-2](audits/phase-2.md) ✅ | 2026-11-13 |
 | 3 | Rule engine | ⬜ | 0 / 40 | ⬜ | — |
 | 4 | Safe operations | ⬜ | 0 / 42 | ⬜ | — |
 | 5 | Preview & automation | ⬜ | 0 / 30 | ⬜ | — |
@@ -110,19 +110,26 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests first | Status |
 |---|---|---|---|
-| P2-T01 | Path authority: normalize, canonicalize, approved roots registry, reject traversal/symlinks | R-PATH-01..08 (+proptest) | ⬜ |
-| P2-T02 | Folder registry: add/edit/remove/enable monitored folders (native picker via `tauri-plugin-dialog`) | R-FOLD-01..04 | ⬜ |
-| P2-T03 | TCC permission probing + denial detection + System Settings deep link | R-PERM-01..02 | ⬜ |
-| P2-T04 | Scanner: streaming `walkdir`-style, no symlink follow, loop guard, exclusions, ignore list, bounded concurrency, batched DB upserts | R-SCAN-01..07 | ⬜ |
-| P2-T05 | Classifier: extension table + `infer` signatures + disagreement → Other; `.app` bundles atomic | R-CLS-01..08 | ⬜ |
-| P2-T06 | Custom categories CRUD + priority resolution | R-CAT-01..03 | ⬜ |
-| P2-T07 | Watcher service (`notify` FSEvents) → debounce/dedupe → bounded channel | R-WATCH-01..05 (integration) | ⬜ |
-| P2-T08 | Stability checker (size+mtime N checks, configurable interval) | R-STAB-01..04 | ⬜ |
-| P2-T09 | Reconciliation scans (interval + on wake + on restart); diff against `file_records` | R-RECON-01..03 | ⬜ |
-| P2-T10 | Watcher supervisor: restart with backoff, health states, volume unmount/remount | R-SUP-01..04 | ⬜ |
-| P2-T11 | Folders screen: list, add, edit, pause/resume, health, errors, stats | UI-FOLD-01..04 | ⬜ |
+| P2-T01 | Path authority: normalize, canonicalize, approved roots registry, reject traversal/symlinks | R-PATH-01..08 (+proptest) | ✅ |
+| P2-T02 | Folder registry: add/edit/remove/enable monitored folders (native picker via `tauri-plugin-dialog`) | R-FOLD-01..04 | ✅ |
+| P2-T03 | TCC permission probing + denial detection + System Settings deep link + Info.plist purpose strings | R-PERM-01..02, BUG-011 | ✅ |
+| P2-T04 | Scanner: streaming `walkdir`-style, no symlink follow, loop guard, exclusions, ignore list, bounded concurrency, batched DB upserts | R-SCAN-01..07 | ✅ |
+| P2-T05 | Classifier: extension table + `infer` signatures + disagreement → Other; `.app` bundles atomic | R-CLS-01..08 | ✅ |
+| P2-T06 | Custom categories CRUD + priority resolution (service + `categories_list`; editing UI/commands ship with the Categories screen in P6-T08) | R-CAT-01..03 | ✅ |
+| P2-T07 | Watcher service (`notify` FSEvents) → debounce/dedupe → bounded channel | R-WATCH-01..05 (integration) | ✅ |
+| P2-T08 | Stability checker (size+mtime N checks, configurable interval) | R-STAB-01..04 | ✅ |
+| P2-T09 | Reconciliation scans (interval + on wake + on restart); diff against `file_records` | R-RECON-01..03 | ✅ |
+| P2-T10 | Watcher supervisor: restart with backoff, health states, volume unmount/remount | R-SUP-01..04 | ✅ |
+| P2-T11 | Folders screen: list, add, edit, pause/resume, health, errors, stats | UI-FOLD-01..04 | ✅ |
 
-**Exit criteria:** monitoring 3+ folders in a temp-dir harness detects create/modify/rename/delete; partial downloads are never emitted as stable; unmount simulation recovers; zero writes outside DB (verified by test). Audit-2 recorded.
+**Exit criteria:** monitoring 3+ folders in a temp-dir harness detects create/modify/rename/delete; partial downloads are never emitted as stable; unmount simulation recovers; zero writes outside DB (verified by test). Audit-2 recorded. ✅ Met — see [audits/phase-2.md](audits/phase-2.md).
+
+**Phase 2 notes**
+- What "new file" means (matters for Phase 5): see SAFETY_MODEL.md § "New-file semantics". First scan of a folder and scope changes record a baseline and report nothing; incomplete scans never delete records.
+- Monitored folders may not overlap (ADR-013).
+- Global monitoring settings (ignore hidden/temp, stability, reconcile interval) are read when folder tasks start. When the Monitoring settings UI ships (Phase 5/6), saving must call `MonitorService::set_settings` and restart folders.
+- Categories editing commands + UI → P6-T08; the classifier must be rebuilt (`MonitorService::set_classifier`) on every category change.
+- Sleep/wake hook → P7-T03 calls `MonitorService::rescan_all` (already implemented).
 
 ---
 

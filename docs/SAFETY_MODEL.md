@@ -6,7 +6,7 @@
 
 | ID | Invariant | Enforced by |
 |---|---|---|
-| S1 | **No silent overwrite.** No operation ever replaces an existing file at the destination. | `rename_excl` (`renamex_np(RENAME_EXCL)`), `copy_excl` (`O_CREAT\|O_EXCL`), clippy ban on `std::fs::rename/copy/write/File::create` outside `safe_fs`. Tests R-SFS, R-CONF. |
+| S1 | **No silent overwrite.** No operation ever replaces an existing file at the destination. | `rename_excl` (`renamex_np(RENAME_EXCL)`), `copy_excl` (`O_CREAT\|O_EXCL`), clippy ban on `std::fs::rename/copy/write/File::create/set_permissions/hard_link` and `symlink` outside `safe_fs` (tests use `test_support`). Tests R-SFS, R-CONF. |
 | S2 | **No loss.** At every instant, each user file exists at its source, its destination, or both — never neither. | Ordered pipeline (below); fault-injection tests at every step (R-RECOV, R-FAIL). |
 | S3 | **No permanent delete** except removing the source after a *verified* cross-volume copy. Everything else uses Trash. | `safe_fs` exposes no generic delete; `remove_verified_source(op)` requires a `Verified` token type. |
 | S4 | **Write-ahead intent.** The ledger row (`PENDING`) is durably committed before the first filesystem mutation. | `organizer` API: `Ledger::begin()` returns the token needed to call `safe_fs`. |
@@ -73,6 +73,33 @@ Orphan `.folderflow-*.partial` files with no ledger row → moved to Trash, neve
 `keep_both`: same as auto_rename (explicit).
 `overwrite`: **only** from an interactive dialog per operation; the existing file is moved to Trash first (not deleted), then rename_excl.
 
-## Ignore list (never processed)
+## Ignore list (never processed) — `engine/ignore.rs`
 
-`.DS_Store`, `._*`, `.localized`, `Icon\r`, `.Spotlight-V100`, `.Trashes`, `.fseventsd`, `.TemporaryItems`, `*.download`, `*.crdownload`, `*.part`, `*.partial`, `*.tmp`, `*.opdownload`, `*.!qB`, `.folderflow-*`, any path inside a `.app`/`.bundle`/`.photoslibrary` package, hidden files (if setting on).
+**Always ignored (no setting can turn these off):**
+- System metadata: `.DS_Store`, `._*`, `.localized`, `Icon\r`, `.com.apple.timemachine.donotpresent`.
+- In-progress downloads: `*.download` (incl. Safari's `.download` folders), `*.crdownload`, `*.part`, `*.partial`, `*.opdownload`, `*.!qB` (S9).
+- FolderFlow's own staging files/folders: `.folderflow-*`.
+- Never descended into: `.git`, `.svn`, `.hg`, `node_modules`, `.cache`, `__pycache__`, `.venv`, `.Trash`, `.Trashes`, `.Spotlight-V100`, `.fseventsd`, `.TemporaryItems`, `.DocumentRevisions-V100`.
+- Inside packages (`.app`, `.bundle`, `.framework`, `.pkg`, `.photoslibrary`, `.xcodeproj`, `.rtfd`, `.pages`/`.numbers`/`.key` bundles, `.sparsebundle`, …): the package is one item; its contents are never processed individually.
+- Symlinks, FIFOs, sockets, devices: skipped; never opened (header reads use `O_NOFOLLOW | O_NONBLOCK`).
+
+**By setting:** hidden files (`.name` or Finder-hidden flag), temporary files (`*.tmp`, `*.temp`, `*.swp`, `*.swo`, `~$*`, `*~`), per-folder include/exclude extensions and excluded subfolders.
+
+## New-file semantics (Phase 2 → consumed by Phase 5)
+
+The monitor reports a file to the next stage ("stable") only when it is genuinely new or changed **and** has stopped changing:
+
+| Situation | Reported? |
+|---|---|
+| File created / modified / renamed into the folder while watching | Yes, once it is stable (N identical checks) |
+| File created while the app was closed or the folder was paused | Yes (diff reconcile on start / resume) |
+| Files present when a folder is first added | **No** — first scan records a baseline only |
+| Files that come into scope because the user turned on "Include subfolders" or changed exclusions | **No** — scope change resets the baseline (BUG-009) |
+| Files in a subfolder that was temporarily unreadable during a scan | **No** — incomplete scans never delete records, so nothing resurfaces as new (BUG-008) |
+| Partial download being written | Never; only the final renamed file, after it is stable |
+
+Existing files are organized only through explicit actions (Preview → Execute, "Organize now", schedules) in Phase 5.
+
+## Monitoring is read-only
+
+Phase 2 code never mutates user folders. Verified by `r_mon_monitoring_makes_zero_filesystem_writes` (full snapshot of path/size/mtime/inode before vs after a monitoring session) and by the clippy bans.

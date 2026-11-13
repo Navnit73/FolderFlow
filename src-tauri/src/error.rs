@@ -23,6 +23,9 @@ pub enum AppError {
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 
+    #[error("path error: {0}")]
+    Path(#[from] crate::engine::paths::PathError),
+
     #[error("invalid {field}: {message}")]
     Validation { field: String, message: String },
 
@@ -95,6 +98,27 @@ impl From<AppError> for UiError {
                 format!("{what} could not be found."),
                 Some("It may have been removed. Refresh and try again."),
             ),
+            AppError::Path(crate::engine::paths::PathError::PermissionDenied) => Self::new(
+                ErrorCode::PermissionDenied,
+                "FolderFlow doesn't have permission to access this folder.",
+                Some("Grant access in System Settings → Privacy & Security → Files and Folders, then try again."),
+            ),
+            AppError::Path(crate::engine::paths::PathError::NotFound) => Self::new(
+                ErrorCode::NotFound,
+                "That folder could not be found.",
+                Some("It may have been moved, renamed, or be on a disconnected drive."),
+            ),
+            AppError::Path(e @ crate::engine::paths::PathError::Io(_)) => Self::new(
+                ErrorCode::Io,
+                format!("FolderFlow couldn't check this location ({e})."),
+                Some("Check that the folder or drive is still available."),
+            ),
+            AppError::Path(e) => Self {
+                code: ErrorCode::Validation,
+                message: capitalize(&e.to_string()),
+                hint: None,
+                field: Some("path".into()),
+            },
             AppError::Io(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Self::new(
                 ErrorCode::PermissionDenied,
                 "FolderFlow doesn't have permission to access this location.",
@@ -116,6 +140,14 @@ impl From<AppError> for UiError {
                 Some("Details were written to the log."),
             ),
         }
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect::<String>() + ".",
+        None => String::new(),
     }
 }
 

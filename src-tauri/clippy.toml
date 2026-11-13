@@ -16,6 +16,9 @@ disallowed-methods = [
   { path = "tokio::fs::remove_file", reason = "permanent delete; use engine::safe_fs" },
   { path = "tokio::fs::remove_dir_all", reason = "permanent recursive delete; never on user data" },
   { path = "tokio::fs::File::create", reason = "truncates existing files; use engine::safe_fs" },
+  { path = "std::fs::set_permissions", reason = "changes user file permissions; never in product code" },
+  { path = "std::fs::hard_link", reason = "creates filesystem entries; use engine::safe_fs" },
+  { path = "std::os::unix::fs::symlink", reason = "creates filesystem entries; use engine::safe_fs" },
   { path = "std::process::Command::new", reason = "no command execution anywhere (S11)" },
   { path = "tokio::process::Command::new", reason = "no command execution anywhere (S11)", allow-invalid = true },
 ]

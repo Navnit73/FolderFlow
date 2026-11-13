@@ -4,9 +4,7 @@ import { defaultSettings } from "@/test/fixtures";
 import type { Settings } from "@/types/settings";
 import { useSettings } from "./settings";
 
-vi.mock("@/bindings", () => ({
-  commands: { settingsGet: vi.fn(), settingsUpdate: vi.fn(), appInfo: vi.fn() },
-}));
+vi.mock("@/bindings", () => import("@/test/mockBindings"));
 const mocked = vi.mocked(commands);
 
 type Reply = { status: "ok"; data: Settings } | { status: "error"; error: { code: "database"; message: string; hint: null; field: null } };

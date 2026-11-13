@@ -67,14 +67,22 @@ folderflow/
 │   │   ├── commands/             one file per screen domain; ≤ ~20 lines per handler
 │   │   ├── engine/
 │   │   │   ├── safe_fs/          ★ only mutating FS code (mod.rs, rename.rs, copy.rs, trash.rs)
-│   │   │   ├── fs_view.rs        ReadOnlyFs trait + impl
-│   │   │   ├── paths.rs          normalization, approved roots, PathAuthority
-│   │   │   ├── watcher.rs, debounce.rs, stability.rs, supervisor.rs
-│   │   │   ├── scanner.rs, reconcile.rs, classifier.rs
+│   │   │   ├── fs_view.rs        ReadOnlyFs trait + RealFs (stat, bounded header read; no follow, non-blocking)
+│   │   │   ├── paths.rs          PathAuthority, validate_new_root, NFC normalisation           [P2]
+│   │   │   ├── ignore.rs         always-ignored names, partial downloads, cache dirs, settings  [P2]
+│   │   │   ├── classifier.rs     extension + infer signature → category/confidence             [P2]
+│   │   │   ├── scanner.rs        walkdir, no symlink follow, packages as items, 500-item batches [P2]
+│   │   │   ├── reconcile.rs      scan → upsert → delete unseen → report new/changed            [P2]
+│   │   │   ├── debounce.rs, stability.rs   pure state machines (caller supplies time)       [P2]
+│   │   │   ├── monitor.rs        MonitorService + one supervised task per folder (watcher, backoff, health) [P2]
 │   │   │   ├── planner.rs        ExecutionPlan (pure, read-only)
 │   │   │   ├── organizer.rs      plan executor
 │   │   │   ├── operations.rs     state machine + ledger
 │   │   │   ├── conflicts.rs, recovery.rs, undo.rs, scheduler.rs, pipeline.rs
+│   │   ├── categories/        built-in table + custom category service                        [P2]
+│   │   ├── folders/           monitored-folder registry, probe_access, overlap rule          [P2]
+│   │   ├── system/            macOS integration via objc2 (System Settings link)             [P2]
+│   │   ├── events.rs          typed events + TauriObserver                                    [P2]
 │   │   ├── rules/ models.rs conditions.rs actions.rs evaluator.rs templates.rs validate.rs presets.rs
 │   │   ├── duplicates/ hasher.rs cache.rs finder.rs
 │   │   ├── database/ pool.rs repo_*.rs
@@ -143,13 +151,19 @@ All commands are `async`, return `Result<T, UiError>`, and are exported to TS vi
 | settings | `settings_get` | → `Settings` |
 | | `settings_update` | `Settings` (full, validated) → `Settings` |
 | folders | `folders_list` | → `Vec<MonitoredFolder>` |
-| | `folders_pick` | → `Option<PickedFolder>` (native dialog in Rust) |
-| | `folders_add` / `folders_update` / `folders_remove` | … → `MonitoredFolder` / `()` |
-| | `folders_set_state` | `{id, state: Start\|Pause\|Resume\|Stop\|Restart}` |
-| | `folders_scan` | `id` → `ScanSummary` |
-| | `folders_permission_status` | `id` → `PermissionStatus` |
-| monitoring | `monitoring_status` / `monitoring_set_global` | → `MonitoringStatus` |
-| categories | `categories_list/create/update/delete/reorder` | |
+| | `folders_add_with_picker` | `recursive` → `Option<MonitoredFolder>` (native picker runs in Rust; `None` = cancelled) |
+| | `folders_add_known` | `kind: Downloads\|Desktop\|Documents\|Pictures\|Movies\|Music, recursive` → `MonitoredFolder` |
+| | `folders_update` | `id, FolderPatch` → `MonitoredFolder` (restarts monitoring; scope change resets baseline) |
+| | `folders_remove` | `id` → `()` (stops monitoring; files untouched) |
+| | `folders_action` | `id, Pause\|Resume\|Rescan\|Restart` → `()` |
+| | `folders_pick_subfolder` | `id` → `Option<String>` (picker inside the folder; re-validated on save) |
+| | `folders_summary` | `id` → `FolderSummary` (files, bytes, per category) |
+| | `folders_errors` | `id` → `Vec<WatcherErrorView>` (latest 50) |
+| | `folders_access` | `id` → `FolderAccess` |
+| | `open_privacy_settings` | → `bool` (fixed System Settings URL via NSWorkspace) |
+| monitoring | `monitoring_status` | → `MonitoringStatus { paused, folders: [FolderRuntime] }` |
+| | `monitoring_set_paused` | `paused` → `MonitoringStatus` |
+| categories | `categories_list` | → `Vec<Category>` (create/update/delete/set_enabled ship with P6-T08) |
 | rules | `rules_list/get/create/update/delete/reorder/set_enabled/duplicate` | |
 | | `rules_validate` | `RuleDraft` → `Vec<ValidationIssue>` |
 | | `rules_presets` | → `Vec<RuleTemplate>` |
@@ -176,9 +190,9 @@ The frontend never receives a raw "move this path to that path" command. It only
 
 | Event | Payload |
 |---|---|
-| `monitoring://status` | `MonitoringStatus` |
-| `folder://health` | `{folder_id, health, last_error?}` |
-| `scan://progress` | `{folder_id, files, bytes, done}` |
+| `folder-status-event` ✅ | `FolderRuntime` — emitted on every folder state change |
+| `folder-activity-event` ✅ | `{folderId, kind: stable\|removed}` — no paths; UI refetches (debounced) |
+| `scan://progress` | `{folder_id, files, bytes, done}` (planned) |
 | `plan://progress` | `{plan_id, evaluated, total}` |
 | `batch://progress` | `{batch_id, done, failed, total}` |
 | `activity://new` | `OperationView` |
@@ -192,8 +206,8 @@ The frontend never receives a raw "move this path to that path" command. It only
 | Path | Page | Notes |
 |---|---|---|
 | `/onboarding/:step` | Onboarding | shown when `onboarding_state.complete == false` |
-| `/` | Overview | dashboard |
-| `/folders`, `/folders/:id` | Folders | |
+| `/` | Overview | dashboard (until it ships, `/` redirects to the first available screen) |
+| `/folders`, `/folders/:id` | Folders ✅ | list + detail (status, overview by category, settings form, recent problems) |
 | `/rules` | Rules | |
 | `/rules/new`, `/rules/:id` | RuleBuilder | |
 | `/preview` | Preview | `?folder=`, `?rule=` |
@@ -217,3 +231,23 @@ The frontend never receives a raw "move this path to that path" command. It only
 ### Navigation availability
 
 `src/app/navigation.ts` lists every screen with `available`. Unbuilt screens render as disabled sidebar entries labelled "Soon" (no placeholder pages, NFR-044) and are not routed. Flip `available` when a screen ships; Phase 9 requires all `true`.
+
+## 8. Folder monitor (Phase 2)
+
+```
+FSEvents (notify) ──try_send──▶ bounded channel (4096) ──▶ folder task
+         │ full → overflow flag ───────────────────────────────▲ reconcile
+folder task:  debounce (dedupe, quiet 500 ms, ≤10k paths) ─▶ re-stat
+              ├─ missing  → forget record → on_removed
+              ├─ new dir  → reconcile (recursive folders)
+              └─ file/package (not ignored) → stability tracker (≤10k)
+              stability: N identical (size, mtime, dev, ino) checks → classify → upsert → on_stable
+supervisor:   probe_access → Unavailable / PermissionDenied (re-check every 30 s)
+              watcher start/runtime error → Error, exponential backoff 1 s … 5 min
+              periodic reconcile (settings), health tick (30 s), Rescan command, overflow → reconcile
+```
+
+- One task per folder is the **only writer** of that folder's `file_records`, so scans never race.
+- `MonitorService` owns tasks; `stop` sends Stop and cancels after `stop_timeout` (BUG-010).
+- Global pause and per-folder pause are tracked separately; resume-all does not resume folders the user paused individually.
+- Stable files are recorded and reported to `MonitorObserver`; Phase 5 attaches the rule pipeline there.

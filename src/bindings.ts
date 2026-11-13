@@ -5,6 +5,7 @@
 
 import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 import type { InvokeOptions } from "@tauri-apps/api/core";
+import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
@@ -13,6 +14,38 @@ export const commands = {
 	settingsGet: (options?: InvokeOptions) => typedError<Settings_Serialize, UiError_Serialize>(__TAURI_INVOKE("settings_get", undefined, options)),
 	/**  Replaces all settings after validation. Returns the stored settings. */
 	settingsUpdate: (settings: Settings_Deserialize, options?: InvokeOptions) => typedError<Settings_Serialize, UiError_Serialize>(__TAURI_INVOKE("settings_update", { settings }, options)),
+	foldersList: (options?: InvokeOptions) => typedError<MonitoredFolder_Serialize[], UiError_Serialize>(__TAURI_INVOKE("folders_list", undefined, options)),
+	/**
+	 *  Opens the native folder picker and starts monitoring the chosen folder.
+	 *  Returns `None` if the user cancelled.
+	 */
+	foldersAddWithPicker: (recursive: boolean, options?: InvokeOptions) => typedError<MonitoredFolder_Serialize | null, UiError_Serialize>(__TAURI_INVOKE("folders_add_with_picker", { recursive }, options)),
+	foldersAddKnown: (kind: KnownFolder, recursive: boolean, options?: InvokeOptions) => typedError<MonitoredFolder_Serialize, UiError_Serialize>(__TAURI_INVOKE("folders_add_known", { kind, recursive }, options)),
+	/**  Applies edits and restarts monitoring so new settings take effect. */
+	foldersUpdate: (id: string, patch: FolderPatch_Deserialize, options?: InvokeOptions) => typedError<MonitoredFolder_Serialize, UiError_Serialize>(__TAURI_INVOKE("folders_update", { id, patch }, options)),
+	/**  Stops monitoring and forgets the folder. Files are never touched. */
+	foldersRemove: (id: string, options?: InvokeOptions) => typedError<null, UiError_Serialize>(__TAURI_INVOKE("folders_remove", { id }, options)),
+	foldersAction: (id: string, action: FolderAction, options?: InvokeOptions) => typedError<null, UiError_Serialize>(__TAURI_INVOKE("folders_action", { id, action }, options)),
+	/**
+	 *  Opens the picker inside the folder and returns a subfolder to exclude.
+	 *  The result is validated again when saved with `folders_update`.
+	 */
+	foldersPickSubfolder: (id: string, options?: InvokeOptions) => typedError<string | null, UiError_Serialize>(__TAURI_INVOKE("folders_pick_subfolder", { id }, options)),
+	foldersSummary: (id: string, options?: InvokeOptions) => typedError<FolderSummary, UiError_Serialize>(__TAURI_INVOKE("folders_summary", { id }, options)),
+	foldersErrors: (id: string, options?: InvokeOptions) => typedError<WatcherErrorView[], UiError_Serialize>(__TAURI_INVOKE("folders_errors", { id }, options)),
+	foldersAccess: (id: string, options?: InvokeOptions) => typedError<FolderAccess, UiError_Serialize>(__TAURI_INVOKE("folders_access", { id }, options)),
+	/**  Opens System Settings → Privacy & Security → Files and Folders (FR-003). */
+	openPrivacySettings: (options?: InvokeOptions) => typedError<boolean, UiError_Serialize>(__TAURI_INVOKE("open_privacy_settings", undefined, options)),
+	monitoringStatus: (options?: InvokeOptions) => typedError<MonitoringStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("monitoring_status", undefined, options)),
+	/**  Pauses or resumes all monitoring (FR-018, menu bar in Phase 7). */
+	monitoringSetPaused: (paused: boolean, options?: InvokeOptions) => typedError<MonitoringStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("monitoring_set_paused", { paused }, options)),
+	categoriesList: (options?: InvokeOptions) => typedError<Category_Serialize[], UiError_Serialize>(__TAURI_INVOKE("categories_list", undefined, options)),
+};
+
+/** Events */
+export const events = {
+	folderActivityEvent: makeEvent<FolderActivityEvent, FolderActivityEvent>("folder-activity-event"),
+	folderStatusEvent: makeEvent<FolderStatusEvent_Serialize, FolderStatusEvent_Deserialize>("folder-status-event"),
 };
 
 /* Types */
@@ -36,6 +69,51 @@ export type AppearanceSettings_Serialize = {
 	density: Density,
 };
 
+/**  A file category (built-in or custom). `id` is stable; built-ins use their slug. */
+export type Category = Category_Serialize | Category_Deserialize;
+
+export type CategoryUsage = {
+	category: string,
+	files: number,
+	bytes: number | null,
+};
+
+/**  A file category (built-in or custom). `id` is stable; built-ins use their slug. */
+export type Category_Deserialize = {
+	id: string,
+	name: string,
+	description?: string | null,
+	/**  Lucide icon name, e.g. `file-text`. */
+	icon: string,
+	/**  Theme token name, e.g. `cat-images` (never a raw color — ADR-003). */
+	colorToken: string,
+	/**  Lower-case extensions without dots. */
+	extensions: string[],
+	destinationPath?: string | null,
+	/**  Lower number = matched first. Custom categories default to 50, built-ins 100. */
+	priority: number,
+	builtin: boolean,
+	enabled: boolean,
+};
+
+/**  A file category (built-in or custom). `id` is stable; built-ins use their slug. */
+export type Category_Serialize = {
+	id: string,
+	name: string,
+	description: string | null,
+	/**  Lucide icon name, e.g. `file-text`. */
+	icon: string,
+	/**  Theme token name, e.g. `cat-images` (never a raw color — ADR-003). */
+	colorToken: string,
+	/**  Lower-case extensions without dots. */
+	extensions: string[],
+	destinationPath: string | null,
+	/**  Lower number = matched first. Custom categories default to 50, built-ins 100. */
+	priority: number,
+	builtin: boolean,
+	enabled: boolean,
+};
+
 export type ConflictPolicy = "auto_rename" | "skip" | "ask" | "keep_both";
 
 export type CpuPreference = "low" | "balanced" | "high";
@@ -44,6 +122,100 @@ export type Density = "comfortable" | "compact";
 
 /**  Stable error codes. The UI switches on these; never rename a variant. */
 export type ErrorCode = "database" | "io" | "permission_denied" | "not_found" | "validation" | "internal";
+
+export type FileActivityKind = "stable" | "removed";
+
+/**  Result of probing whether FolderFlow can read a folder (FR-003). */
+export type FolderAccess = "granted" | "denied" | "missing" | "not_a_folder";
+
+export type FolderAction = "pause" | "resume" | "rescan" | "restart";
+
+/**  A file became stable or disappeared in a monitored folder (no paths sent). */
+export type FolderActivityEvent = {
+	folderId: string,
+	kind: FileActivityKind,
+};
+
+export type FolderHealth = "unknown" | "healthy" | "paused" | "unavailable" | "permission_denied" | "error";
+
+/**  Editable fields. `None` = unchanged. */
+export type FolderPatch = FolderPatch_Serialize | FolderPatch_Deserialize;
+
+/**  Editable fields. `None` = unchanged. */
+export type FolderPatch_Deserialize = {
+	name?: string | null,
+	enabled?: boolean | null,
+	recursive?: boolean | null,
+	settings?: FolderSettings_Deserialize | null,
+};
+
+/**  Editable fields. `None` = unchanged. */
+export type FolderPatch_Serialize = {
+	name: string | null,
+	enabled: boolean | null,
+	recursive: boolean | null,
+	settings: FolderSettings_Serialize | null,
+};
+
+export type FolderRuntime = FolderRuntime_Serialize | FolderRuntime_Deserialize;
+
+export type FolderRuntime_Deserialize = {
+	folderId: string,
+	state: RuntimeState,
+	pendingEvents: number,
+	trackedFiles: number,
+	lastError?: string | null,
+	lastEventAt?: number | null,
+};
+
+export type FolderRuntime_Serialize = {
+	folderId: string,
+	state: RuntimeState,
+	pendingEvents: number,
+	trackedFiles: number,
+	lastError: string | null,
+	lastEventAt: number | null,
+};
+
+/**  Per-folder options (FR-011). Stored in `monitored_folders.settings_json`. */
+export type FolderSettings = FolderSettings_Serialize | FolderSettings_Deserialize;
+
+/**  Per-folder options (FR-011). Stored in `monitored_folders.settings_json`. */
+export type FolderSettings_Deserialize = {
+	/**  If non-empty, only these extensions are processed. */
+	includeExtensions?: string[],
+	excludeExtensions?: string[],
+	/**  Absolute paths of subfolders to skip (must be inside the folder). */
+	excludedSubfolders?: string[],
+	/**  Overrides the global stability interval for this folder. */
+	stabilityIntervalSecs?: number | null,
+};
+
+/**  Per-folder options (FR-011). Stored in `monitored_folders.settings_json`. */
+export type FolderSettings_Serialize = {
+	/**  If non-empty, only these extensions are processed. */
+	includeExtensions: string[],
+	excludeExtensions: string[],
+	/**  Absolute paths of subfolders to skip (must be inside the folder). */
+	excludedSubfolders: string[],
+	/**  Overrides the global stability interval for this folder. */
+	stabilityIntervalSecs: number | null,
+};
+
+/**  A folder's runtime state changed (watching, paused, unavailable, …). */
+export type FolderStatusEvent = FolderStatusEvent_Serialize | FolderStatusEvent_Deserialize;
+
+/**  A folder's runtime state changed (watching, paused, unavailable, …). */
+export type FolderStatusEvent_Deserialize = FolderRuntime_Deserialize;
+
+/**  A folder's runtime state changed (watching, paused, unavailable, …). */
+export type FolderStatusEvent_Serialize = FolderRuntime_Serialize;
+
+export type FolderSummary = {
+	files: number,
+	bytes: number | null,
+	byCategory: CategoryUsage[],
+};
 
 export type GeneralSettings = GeneralSettings_Serialize | GeneralSettings_Deserialize;
 
@@ -65,7 +237,46 @@ export type GeneralSettings_Serialize = {
 	confirmBulkOperations: boolean,
 };
 
+/**  Standard macOS folders offered in onboarding (FR-002). */
+export type KnownFolder = "downloads" | "desktop" | "documents" | "pictures" | "movies" | "music";
+
 export type LogLevel = "normal" | "verbose";
+
+export type MonitoredFolder = MonitoredFolder_Serialize | MonitoredFolder_Deserialize;
+
+export type MonitoredFolder_Deserialize = {
+	id: string,
+	name: string,
+	path: string,
+	enabled: boolean,
+	recursive: boolean,
+	settings: FolderSettings_Deserialize,
+	health: FolderHealth,
+	lastError?: string | null,
+	fileCount: number,
+	/**  Sum of tracked file sizes in bytes. */
+	totalBytes: number | null,
+	/**  Unix epoch milliseconds. */
+	lastScannedAt?: number | null,
+	createdAt: number | null,
+};
+
+export type MonitoredFolder_Serialize = {
+	id: string,
+	name: string,
+	path: string,
+	enabled: boolean,
+	recursive: boolean,
+	settings: FolderSettings_Serialize,
+	health: FolderHealth,
+	lastError: string | null,
+	fileCount: number,
+	/**  Sum of tracked file sizes in bytes. */
+	totalBytes: number | null,
+	/**  Unix epoch milliseconds. */
+	lastScannedAt: number | null,
+	createdAt: number | null,
+};
 
 export type MonitoringSettings = MonitoringSettings_Serialize | MonitoringSettings_Deserialize;
 
@@ -91,6 +302,18 @@ export type MonitoringSettings_Serialize = {
 	ignoreHiddenFiles: boolean,
 	ignoreTemporaryFiles: boolean,
 	maxConcurrentOps: number,
+};
+
+export type MonitoringStatus = MonitoringStatus_Serialize | MonitoringStatus_Deserialize;
+
+export type MonitoringStatus_Deserialize = {
+	paused: boolean,
+	folders: FolderRuntime_Deserialize[],
+};
+
+export type MonitoringStatus_Serialize = {
+	paused: boolean,
+	folders: FolderRuntime_Serialize[],
 };
 
 export type OrganizationSettings = OrganizationSettings_Serialize | OrganizationSettings_Deserialize;
@@ -145,6 +368,8 @@ export type PrivacySettings_Serialize = {
 
 export type RuleExecutionMode = "first_match" | "continue" | "stop_after_move" | "stop_after_action" | "sequential";
 
+export type RuntimeState = "starting" | "scanning" | "watching" | "paused" | "unavailable" | "permission_denied" | "error" | "stopped";
+
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
 export type Settings_Deserialize = {
@@ -188,6 +413,12 @@ export type UiError_Serialize = {
 	field: string | null,
 };
 
+export type WatcherErrorView = {
+	code: string,
+	message: string,
+	occurredAt: number | null,
+};
+
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
     try {
@@ -196,4 +427,29 @@ async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; dat
         if (e instanceof Error) throw e;
         return { status: "error", error: e as any };
     }
+}
+
+type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
+
+type EventEmitTo<T> = [T] extends [null] ? (target: __TAURI_EVENT.EventTarget | string) => Promise<void> : (target: __TAURI_EVENT.EventTarget | string, payload: T) => Promise<void>;
+
+function makeEvent<TListen, TEmit = TListen>(name: string, serialize?: (payload: TEmit) => unknown, deserialize?: (payload: any) => TListen) {
+    const mapEvent = (cb: __TAURI_EVENT.EventCallback<TListen>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
+    const mapPayload = (payload: TEmit) => serialize ? serialize(payload) : payload;
+
+    const base = {
+        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
+        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.once(name, mapEvent(cb)),
+        emit: ((payload: TEmit) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>,
+        emitTo: ((to: __TAURI_EVENT.EventTarget | string, payload: TEmit) => __TAURI_EVENT.emitTo(to, name, mapPayload(payload)) as unknown) as EventEmitTo<TEmit>
+    };
+
+    const fn = (target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window) => ({
+        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.listen(name, mapEvent(cb)),
+        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.once(name, mapEvent(cb)),
+        emit: ((payload: TEmit) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>,
+        emitTo: ((to: __TAURI_EVENT.EventTarget | string, payload: TEmit) => target.emitTo(to, name, mapPayload(payload)) as unknown) as EventEmitTo<TEmit>
+    });
+
+    return Object.assign(fn, base);
 }

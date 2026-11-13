@@ -12,6 +12,9 @@
 - Booleans: `INTEGER` 0/1 with `CHECK`.
 - JSON columns: validated by Rust (serde) before write; carry `"v": <n>` for versioning.
 - The DB is **never** the source of truth for whether a file exists — always re-stat.
+- Paths are stored **NFC-normalised** (macOS may report either NFC or NFD; APFS treats them as the same name).
+- `file_records.last_scanned_at` is a per-folder **scan stamp**, not just a time: each scan uses `max(now, previous max + 1)` so "not seen by this scan" stays correct across same-millisecond scans and backwards clock jumps (BUG-013).
+- Built-in categories are defined in Rust (`categories/model.rs`) and upserted at startup; the user's `enabled`/`priority`/`destination_path` are preserved.
 - Migrations are append-only. Never edit a released migration.
 
 ## Migration plan
@@ -19,6 +22,7 @@
 | File | Phase | Contents |
 |---|---|---|
 | `0001_init.sql` | 1 | All tables below |
+| `0002_file_classification.sql` | 2 | `file_records.mime`, `.confidence` (`high`/`low`), `.is_package`; index `(folder_id, last_scanned_at)` |
 | later | as needed | Additive changes; each with a test that migrates a populated v(n-1) DB |
 
 ## Schema (`0001_init.sql`)

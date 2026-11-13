@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "@/bindings";
 import { useSettings } from "@/stores/settings";
 import { defaultSettings } from "@/test/fixtures";
+import { resetBindingMocks } from "@/test/mockBindings";
 import { App } from "./App";
 
-vi.mock("@/bindings", () => ({
-  commands: { settingsGet: vi.fn(), settingsUpdate: vi.fn(), appInfo: vi.fn() },
-}));
+vi.mock("@/bindings", () => import("@/test/mockBindings"));
 const mocked = vi.mocked(commands);
 
 beforeEach(() => {
+  resetBindingMocks();
   useSettings.setState({ settings: null, status: "idle", saving: false, loadError: null, saveError: null });
 });
 
@@ -21,7 +21,7 @@ describe("App bootstrap", () => {
     s.appearance = { theme: "dark", density: "compact" };
     mocked.settingsGet.mockResolvedValue({ status: "ok", data: s });
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Folders" })).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(document.documentElement).toHaveAttribute("data-density", "compact");
   });
@@ -33,6 +33,6 @@ describe("App bootstrap", () => {
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent("DB unavailable");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Folders" })).toBeInTheDocument();
   });
 });

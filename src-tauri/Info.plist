@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the app bundle's Info.plist by Tauri. Purpose strings appear in macOS folder-access prompts (FR-002/003). -->
+<plist version="1.0">
+<dict>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>FolderFlow watches your Downloads folder so it can organize new files with the rules you create. Your files never leave your Mac.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>FolderFlow watches your Desktop so it can organize new files with the rules you create. Your files never leave your Mac.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>FolderFlow watches your Documents folder so it can organize new files with the rules you create. Your files never leave your Mac.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>FolderFlow needs access to folders you chose on external drives to organize them. Your files never leave your Mac.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>FolderFlow needs access to folders you chose on network drives to organize them. Your files never leave your Mac.</string>
+</dict>
+</plist>

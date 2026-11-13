@@ -2,4 +2,6 @@
 //! map the error. No business logic here (docs/ARCHITECTURE.md §4).
 
 pub mod app;
+pub mod folders;
+pub mod monitoring;
 pub mod settings;
