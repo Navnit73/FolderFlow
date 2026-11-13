@@ -3,7 +3,7 @@
 > **This file is the source of truth for progress.** Update it in the same change as the code.
 > Requirements live in [PRD.md](PRD.md). Test IDs are defined in [TESTING_STRATEGY.md](TESTING_STRATEGY.md). Audits live in [audits/](audits/).
 
-**Last updated:** 2026-11-13 · **Current phase:** Phase 0 — Planning (complete) → next: Phase 1
+**Last updated:** 2026-11-13 · **Current phase:** Phase 1 — Foundation (complete) → next: Phase 2
 
 ## Status legend
 
@@ -21,7 +21,7 @@
 | Phase | Name | Status | Tests | Audit | Exit date |
 |---|---|---|---|---|---|
 | 0 | Planning & docs | ✅ | n/a | [phase-0](audits/phase-0.md) ✅ | 2026-11-13 |
-| 1 | Foundation | ⬜ | 0 / 19 | ⬜ | — |
+| 1 | Foundation | ✅ | 62 / 62 (24 Rust · 38 TS) | [phase-1](audits/phase-1.md) ✅ | 2026-11-13 |
 | 2 | Filesystem engine | ⬜ | 0 / 34 | ⬜ | — |
 | 3 | Rule engine | ⬜ | 0 / 40 | ⬜ | — |
 | 4 | Safe operations | ⬜ | 0 / 42 | ⬜ | — |
@@ -78,21 +78,28 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests first | Status |
 |---|---|---|---|
-| P1-T01 | Init Tauri 2 + React + TS (strict) + Vite; pnpm; repo layout per ARCHITECTURE.md | — | ⬜ |
-| P1-T02 | Tailwind v4 + shadcn/ui wired **only** through `src/styles/theme.css` | UI-THEME-01..03 | ⬜ |
-| P1-T03 | `scripts/check-tokens.mjs`: fail on hex/rgb/hsl/named colors or arbitrary px values outside `theme.css`; verify dark/system-dark blocks match | UI-THEME-04..05 | ⬜ |
-| P1-T04 | Rust crate layout: `engine/`, `rules/`, `database/`, `commands/`, … with `lib.rs` wiring only | — | ⬜ |
-| P1-T05 | Error model: `AppError` (thiserror) → serializable `UiError { code, message, hint }` | R-ERR-01..03 | ⬜ |
-| P1-T06 | `tracing` + rolling file appender in `~/Library/Logs/FolderFlow`, retention setting, path redaction | R-LOG-01..02 | ⬜ |
-| P1-T07 | SQLite via SQLx: WAL, foreign keys, migration `0001_init.sql` (full schema from DATABASE.md) | R-DB-01..04 | ⬜ |
-| P1-T08 | Settings service (typed, defaults, validation) + `settings_get/settings_update` commands | R-SET-01..03 | ⬜ |
-| P1-T09 | Typed bindings Rust → TS (tauri-specta, see ADR-004) | R-CMD-01 | ⬜ |
-| P1-T10 | App shell: sidebar, header, router, Zustand stores, theme switch (light/dark/system), density | UI-SHELL-01..03 | ⬜ |
-| P1-T11 | Tauri capabilities: deny-by-default; CSP set | R-SEC-01 | ⬜ |
-| P1-T12 | Clippy `disallowed_methods` config banning `std::fs::rename`, `remove_file`, `remove_dir_all`, `std::process::Command` outside `safe_fs` | R-SEC-02 | ⬜ |
-| P1-T13 | CI workflow (GitHub Actions, macos-14) running all gates | — | ⬜ |
+| P1-T01 | Init Tauri 2 + React + TS (strict) + Vite; pnpm; repo layout per ARCHITECTURE.md | — | ✅ |
+| P1-T02 | Tailwind v4 + shadcn/ui wired **only** through `src/styles/theme.css` | UI-THEME-01..03 | ✅ |
+| P1-T03 | `scripts/check-tokens.ts`: fail on hex/rgb/hsl/named colors or arbitrary px values outside `theme.css`; verify dark/system-dark blocks match | UI-THEME-04..05 | ✅ |
+| P1-T04 | Rust crate layout with `lib.rs` wiring only (modules are added when their phase starts — no empty stubs) | — | ✅ |
+| P1-T05 | Error model: `AppError` (thiserror) → serializable `UiError { code, message, hint }` | R-ERR-01..03 | ✅ |
+| P1-T06 | `tracing` + rolling file appender in `~/Library/Logs/com.folderflow.desktop`, retention setting, path redaction | R-LOG-01..02 | ✅ |
+| P1-T07 | SQLite via SQLx: WAL, foreign keys, migration `0001_init.sql` (full schema from DATABASE.md) | R-DB-01..04 | ✅ |
+| P1-T08 | Settings service (typed, defaults, validation) + `settings_get/settings_update` commands | R-SET-01..03 | ✅ |
+| P1-T09 | Typed bindings Rust → TS (tauri-specta, see ADR-004) | R-CMD-01 | ✅ |
+| P1-T10 | App shell: sidebar, header, router, Zustand stores, theme switch (light/dark/system), density | UI-SHELL-01..03 | ✅ |
+| P1-T11 | Tauri capabilities: deny-by-default; CSP set | R-SEC-01 | ✅ |
+| P1-T12 | Clippy `disallowed_methods` config banning `std::fs::rename`, `remove_file`, `remove_dir_all`, `std::process::Command` outside `safe_fs` | R-SEC-02 | ✅ |
+| P1-T13 | CI workflow (GitHub Actions, macos-15) running all gates | — | ✅ |
 
-**Exit criteria:** app launches; theme toggles; settings persist across restart; all gates green; token check passes; audit-1 recorded.
+**Exit criteria:** app launches; theme toggles; settings persist across restart; all gates green; token check passes; audit-1 recorded. ✅ Met — see [audits/phase-1.md](audits/phase-1.md).
+
+**Phase 1 notes**
+- Tauri bundle id is `com.folderflow.desktop` (BUG-001). Data: `~/Library/Application Support/com.folderflow.desktop/`, logs: `~/Library/Logs/com.folderflow.desktop/`.
+- Settings UI ships **Appearance** and **About** only; other settings sections appear when the features they control exist (no inert toggles, NFR-044). All settings are already stored and validated in Rust.
+- Sidebar shows unbuilt screens as disabled "Soon" items (see ARCHITECTURE §7).
+- Deferred: NFR-032 (corrupted DB → backup & recreate) moved to **P4-T09** because it needs the safe file-operation layer.
+- CI workflow is written but has not run yet (repo is not under git / on GitHub).
 
 ---
 
@@ -156,7 +163,7 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 | P4-T06 | Copy + rename pipelines | R-COPY-01..03, R-REN-01..03 | ⬜ |
 | P4-T07 | Conflict resolver: auto-rename `(n)`, skip, ask (→ Needs review), keep both; race-safe | R-CONF-01..05 (+proptest) | ⬜ |
 | P4-T08 | Undo: last / selected / batch / restore structure; occupied-path prompt; copy-undo hash check | R-UNDO-01..07 | ⬜ |
-| P4-T09 | Recovery on startup for every non-terminal state; orphan staging file cleanup (to Trash, never delete) | R-RECOV-01..08 | ⬜ |
+| P4-T09 | Recovery on startup for every non-terminal state; orphan staging file cleanup (to Trash, never delete); corrupted DB → back up + recreate (NFR-032, deferred from P1) | R-RECOV-01..09 | ⬜ |
 | P4-T10 | Activity screen (table, filters, pagination, undo, reveal, retry, CSV export, clear) | UI-ACT-01..05 | ⬜ |
 
 **Exit criteria:** fault-injection suite proves: for every crash point, the file exists exactly at source or destination (or both, never neither), and no existing file is ever overwritten. Audit-4 recorded with the safety checklist fully signed off.

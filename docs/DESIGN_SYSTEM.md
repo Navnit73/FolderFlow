@@ -89,14 +89,17 @@ Category colors are referenced by **token name** in the database (`categories.co
   220 px sidebar (bg-sidebar), transparent titlebar with traffic-light inset
 ```
 
-## 6. Enforcement — `scripts/check-tokens.mjs` (P1-T03)
+## 6. Enforcement — `scripts/check-tokens.ts` (P1-T03)
 
 Fails CI if any file under `src/` other than `src/styles/theme.css` contains:
 
 - color literals: `#rgb`, `#rrggbb`, `rgb(`, `rgba(`, `hsl(`, `oklch(`, named colors in style props;
 - Tailwind palette classes: `(bg|text|border|ring|fill|stroke)-(red|blue|gray|slate|zinc|…)-\d+`;
 - arbitrary values: `-\[` (e.g. `p-[13px]`, `bg-[#eee]`);
-- inline `style={{ color|background|fontSize|… }}` (except CSS variables for dynamic widths like progress bars).
+- inline `style={{ color|background|fontSize|… }}` (dynamic widths like progress bars are allowed);
+- any `.css` file under `src/` other than `theme.css`.
+
+Arbitrary values that reference a theme variable are allowed: `w-[var(--ff-sidebar-width)]`, `duration-(--ff-duration-base)`. Motion uses `duration-(--ff-duration-fast|base|slow)` and `ease-ff`.
 
 It also verifies (UI-THEME-05) that the `[data-theme="dark"]` block and the system-dark media block in `theme.css` define identical values.
 

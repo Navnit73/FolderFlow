@@ -2,7 +2,7 @@
 
 **Your files organized automatically.** An offline-first, privacy-first automatic file organizer for macOS 13+, built with Tauri 2, Rust and React.
 
-> Status: **Phase 0 (planning) complete.** Implementation starts at Phase 1. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
+> Status: **Phase 1 (foundation) complete.** Next: Phase 2 — filesystem engine. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
 
 ## Documentation
 
@@ -20,5 +20,30 @@
 
 ## Development
 
-Prerequisites: Rust (stable), Node 20+, pnpm, Xcode Command Line Tools. Setup commands will be added in Phase 1.
+Prerequisites: Rust ≥ 1.94, Node ≥ 20 (24 recommended — `check:tokens` runs TypeScript directly), pnpm, Xcode Command Line Tools.
+
+```bash
+pnpm install
+pnpm tauri dev          # run the app (Vite on :1420 + Rust)
+pnpm bindings           # regenerate src/bindings.ts after changing Rust commands/types
+```
+
+Gates (all must pass before a task is done — see [CLAUDE.md](CLAUDE.md)):
+
+```bash
+pnpm gates                                   # lint, typecheck, test, build, check:tokens
+cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test && cargo audit
+```
+
+`pnpm build` must run before the first `cargo` build: Tauri embeds `dist/` at compile time.
+
+App data: `~/Library/Application Support/com.folderflow.desktop/` · Logs: `~/Library/Logs/com.folderflow.desktop/`
+
+### Troubleshooting
+
+**`ld: tapi error: … unknown architecture arm64e.x1-macos`** — your Command Line Tools linker is older than the default macOS SDK (ENV-001). Either update the Command Line Tools / Xcode, or point builds at an older installed SDK:
+
+```bash
+export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+```
 # FolderFlow

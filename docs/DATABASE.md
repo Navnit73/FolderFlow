@@ -4,7 +4,7 @@
 
 ## Conventions
 
-- Location: `~/Library/Application Support/com.folderflow.app/folderflow.db`
+- Location: `~/Library/Application Support/com.folderflow.desktop/folderflow.db`
 - `PRAGMA journal_mode=WAL; foreign_keys=ON; synchronous=NORMAL; busy_timeout=5000;`
 - Ledger writes that precede a filesystem mutation use a transaction committed with `synchronous=FULL` semantics (explicit `PRAGMA synchronous=FULL` on the ledger connection).
 - IDs: UUID v7 as `TEXT` (time-ordered → good index locality).

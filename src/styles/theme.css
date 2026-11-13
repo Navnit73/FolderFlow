@@ -452,10 +452,10 @@
   --spacing-sidebar: var(--ff-sidebar-width);
   --spacing-header: var(--ff-header-height);
   --spacing-page: var(--ff-page-padding);
+  --spacing-titlebar: var(--ff-titlebar-inset);
   --container-content: var(--ff-content-max);
 
   --ease-ff: var(--ff-ease);
-  --animate-duration-fast: var(--ff-duration-fast);
 }
 
 /* -----------------------------------------------------------------------------

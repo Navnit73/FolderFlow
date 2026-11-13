@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Interim app icon (brand assets pending, PRD Q5). -->
+  <rect x="80" y="80" width="864" height="864" rx="190" fill="#0a7cff"/>
+  <path d="M250 360c0-28 22-50 50-50h150l60 60h214c28 0 50 22 50 50v264c0 28-22 50-50 50H300c-28 0-50-22-50-50V360z" fill="#ffffff"/>
+  <path d="M430 560h150m0 0-56-56m56 56-56 56" stroke="#0a7cff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

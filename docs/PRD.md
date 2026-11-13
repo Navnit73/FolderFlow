@@ -294,7 +294,7 @@ Mac users accumulate hundreds of files in Downloads, Desktop and Documents. Manu
 ### UX
 | ID | Requirement |
 |---|---|
-| NFR-040 | All UI colors, surfaces, borders, text, radii, spacing, typography, motion come from the single theme file [`src/styles/theme.css`](../src/styles/theme.css). Enforced by `scripts/check-tokens.mjs` in CI. |
+| NFR-040 | All UI colors, surfaces, borders, text, radii, spacing, typography, motion come from the single theme file [`src/styles/theme.css`](../src/styles/theme.css). Enforced by `scripts/check-tokens.ts` (`pnpm check:tokens`) in CI. |
 | NFR-041 | Light, dark, system appearance; compact / comfortable density. |
 | NFR-042 | Every screen has empty, loading, error and success states. |
 | NFR-043 | Keyboard accessible; visible focus rings; WCAG AA contrast for text tokens. |

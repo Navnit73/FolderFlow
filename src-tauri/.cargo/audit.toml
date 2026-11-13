@@ -1,0 +1,10 @@
+# cargo-audit configuration.
+# Every ignore MUST reference an ADR in docs/DECISIONS.md and be re-checked each phase audit.
+[advisories]
+ignore = [
+  # libsqlite3-sys < 0.39 (SQLite < 3.54): uninitialised memory when opening an
+  # attacker-crafted db + -wal pair. FolderFlow only opens its own DB in its private
+  # app-data dir and never opens foreign SQLite files. Blocked on sqlx-sqlite
+  # allowing libsqlite3-sys >= 0.39. See ADR-008. Remove as soon as possible.
+  "RUSTSEC-2026-0459",
+]

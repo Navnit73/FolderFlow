@@ -60,8 +60,10 @@ folderflow/
 │   ├── src/
 │   │   ├── main.rs               calls lib::run()
 │   │   ├── lib.rs                builder, state, plugin + command registration only
-│   │   ├── app_state.rs
-│   │   ├── error.rs              AppError, UiError
+│   │   ├── app_state.rs          AppState + AppPaths, built in Tauri setup()
+│   │   ├── error.rs              AppError, UiError (stable ErrorCode)
+│   │   ├── logging.rs            tracing → daily-rotated files, redact_path()
+│   │   ├── settings/             typed Settings model, validation, SettingsService
 │   │   ├── commands/             one file per screen domain; ≤ ~20 lines per handler
 │   │   ├── engine/
 │   │   │   ├── safe_fs/          ★ only mutating FS code (mod.rs, rename.rs, copy.rs, trash.rs)
@@ -80,13 +82,13 @@ folderflow/
 │   │   ├── security/ capabilities.rs license.rs keychain.rs
 │   │   ├── system/ tray.rs login_item.rs power.rs volumes.rs
 │   │   ├── config_io/ export.rs import.rs schema.rs
-│   │   └── utils/ clock.rs time.rs
+│   │   └── utils/ time.rs (clock.rs added with the scheduler)
 │   ├── migrations/0001_init.sql …
 │   ├── capabilities/default.json
 │   ├── clippy.toml               disallowed_methods
 │   └── tests/                    integration tests (temp dirs only)
 ├── tests/e2e/                    Playwright
-├── scripts/check-tokens.mjs
+├── scripts/check-tokens.ts         token enforcement (+ check-tokens.test.ts)
 └── README.md
 ```
 
@@ -133,12 +135,13 @@ pub enum OpState { Pending, Validating, InProgress, Verifying, Completed, Failed
 
 ## 6. Tauri command interface
 
-All commands are `async`, return `Result<T, UiError>`, and are exported to TS via tauri-specta (ADR-004). Paths in arguments are re-validated by `PathAuthority` on every call.
+All commands are `async`, return `Result<T, UiError>`, and are exported to TS via tauri-specta (ADR-004) in `ErrorHandlingMode::Result`, so each binding resolves to `{status:"ok",data}` or `{status:"error",error: UiError}`. Frontend code calls them only through `src/services/*` (`unwrap()` → typed `CommandError`); direct `invoke` is lint-banned. Regenerate with `pnpm bindings`; R-CMD-01 fails CI if stale. Paths in arguments are re-validated by `PathAuthority` on every call.
 
 | Domain | Command | Args → Returns |
 |---|---|---|
+| app | `app_info` | → `AppInfo` (version, data/log dirs, schema version) |
 | settings | `settings_get` | → `Settings` |
-| | `settings_update` | `SettingsPatch` → `Settings` |
+| | `settings_update` | `Settings` (full, validated) → `Settings` |
 | folders | `folders_list` | → `Vec<MonitoredFolder>` |
 | | `folders_pick` | → `Option<PickedFolder>` (native dialog in Rust) |
 | | `folders_add` / `folders_update` / `folders_remove` | … → `MonitoredFolder` / `()` |
@@ -209,3 +212,8 @@ The frontend never receives a raw "move this path to that path" command. It only
 
 - Zustand stores: `useUi` (theme, density, sidebar), `useMonitoring`, `useFolders`, `useRules`, `usePlan`, `useActivity`. Stores call `services/*` which call generated bindings. Event listeners update stores.
 - No business logic in stores — only caching and UI state.
+- Stores that save optimistically must never roll back to a locally remembered state on failure; they re-read from Rust (BUG-004).
+
+### Navigation availability
+
+`src/app/navigation.ts` lists every screen with `available`. Unbuilt screens render as disabled sidebar entries labelled "Soon" (no placeholder pages, NFR-044) and are not routed. Flip `available` when a screen ships; Phase 9 requires all `true`.

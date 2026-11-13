@@ -59,7 +59,9 @@ Test function names embed the ID in lowercase snake case so `cargo test r_move_`
 | R-CMD-01 | generated `bindings.ts` is up to date (diff check) |
 | UI-SHELL-01..03 | sidebar nav routes; header renders title/actions; theme switch persists |
 | R-SEC-01 | capability file grants no fs/shell/http permissions to webview |
-| R-SEC-02 | clippy `disallowed_methods` config present and triggers on a fixture |
+| R-SEC-02 | clippy `disallowed_methods` config present (triggering verified manually with a probe in the Phase 1 audit) |
+
+Added during Phase 1: R-DB-05 (CHECK constraints), R-SET-04 (corrupt section → defaults), R-SET-05 (unknown/missing fields tolerated), R-SEC-01b (strict CSP), R-LOG-02b (home → `~`), BUG-004 store race, BUG-007 log filter, App bootstrap load/error, About retry, `cn` merge rules, check-tokens allow-list cases.
 
 ### Phase 2 — Filesystem engine (34)
 R-PATH-01..08 normalization, `..` rejection, root containment, symlink parent rejection, unicode NFC/NFD equivalence, case-insensitive APFS handling, trailing slash, proptest: no generated path escapes root ·

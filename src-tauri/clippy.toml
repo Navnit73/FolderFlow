@@ -1,0 +1,21 @@
+# Filesystem safety (docs/SAFETY_MODEL.md S1, S3, S11).
+# These calls can overwrite or delete user files, or execute commands.
+# The ONLY module allowed to use them (with #[allow(clippy::disallowed_methods)])
+# is engine::safe_fs, plus explicitly reviewed test fixtures.
+disallowed-methods = [
+  { path = "std::fs::rename", reason = "overwrites an existing destination; use engine::safe_fs::rename_excl" },
+  { path = "std::fs::copy", reason = "overwrites an existing destination; use engine::safe_fs::copy_excl" },
+  { path = "std::fs::write", reason = "truncates existing files; use engine::safe_fs" },
+  { path = "std::fs::remove_file", reason = "permanent delete; use engine::safe_fs (trash / verified source removal)" },
+  { path = "std::fs::remove_dir", reason = "permanent delete; use engine::safe_fs" },
+  { path = "std::fs::remove_dir_all", reason = "permanent recursive delete; never on user data" },
+  { path = "std::fs::File::create", reason = "truncates existing files; use OpenOptions::create_new via engine::safe_fs" },
+  { path = "tokio::fs::rename", reason = "overwrites an existing destination; use engine::safe_fs::rename_excl" },
+  { path = "tokio::fs::copy", reason = "overwrites an existing destination; use engine::safe_fs::copy_excl" },
+  { path = "tokio::fs::write", reason = "truncates existing files; use engine::safe_fs" },
+  { path = "tokio::fs::remove_file", reason = "permanent delete; use engine::safe_fs" },
+  { path = "tokio::fs::remove_dir_all", reason = "permanent recursive delete; never on user data" },
+  { path = "tokio::fs::File::create", reason = "truncates existing files; use engine::safe_fs" },
+  { path = "std::process::Command::new", reason = "no command execution anywhere (S11)" },
+  { path = "tokio::process::Command::new", reason = "no command execution anywhere (S11)", allow-invalid = true },
+]
