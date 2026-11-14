@@ -240,6 +240,9 @@ export function CategoriesPage() {
                     </Button>
                   </>
                 )}
+                <label htmlFor={`cat-enable-${cat.id}`} className="sr-only">
+                  {`Enable ${cat.name} category`}
+                </label>
                 <Switch
                   id={`cat-enable-${cat.id}`}
                   checked={cat.enabled}

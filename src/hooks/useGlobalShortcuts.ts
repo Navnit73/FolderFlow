@@ -134,3 +134,4 @@ export function useGlobalShortcuts(): void {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [navigate, pathname]);
 }
+

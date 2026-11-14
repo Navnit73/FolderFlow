@@ -82,6 +82,7 @@ export function PrivacySection() {
         {saveError && <ErrorState error={saveError} />}
         <SettingRow
           label="Redact file paths in diagnostic logs"
+          htmlFor="priv-redact"
           description="Replace user paths with anonymous hashes in rotated diagnostic log files."
         >
           <Switch

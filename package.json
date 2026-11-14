@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "check:tokens": "node scripts/check-tokens.ts",
     "bindings": "cd src-tauri && UPDATE_BINDINGS=1 cargo test --lib r_cmd_01",
     "gates": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:tokens"
@@ -32,7 +33,9 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/vite": "^4.3.5",
     "@tauri-apps/cli": "^2.12.4",
     "@testing-library/jest-dom": "^7.0.1",

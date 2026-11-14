@@ -61,8 +61,9 @@ describe("CategoriesPage (UI-CAT-01)", () => {
     expect(await screen.findByText("Documents")).toBeInTheDocument();
     expect(screen.getByText("Other")).toBeInTheDocument();
 
-    // Built-in fallback 'other' switch cannot be disabled
-    expect(document.getElementById("cat-enable-other")).toBeDisabled();
+    // Built-in fallback 'other' switch cannot be disabled and has an explicit accessible name
+    expect(screen.getByRole("switch", { name: "Enable Other category" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Enable Documents category" })).toBeEnabled();
     // Built-in categories do not show Delete/Edit buttons
     expect(screen.queryByRole("button", { name: "Delete Documents" })).not.toBeInTheDocument();
 

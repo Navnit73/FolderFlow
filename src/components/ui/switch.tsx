@@ -5,16 +5,18 @@ interface SwitchProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }
 
-/** macOS-style toggle. Label it with `<label htmlFor={id}>`. */
-export function Switch({ id, checked, onChange, disabled }: SwitchProps) {
+/** macOS-style toggle. Label it with `<label htmlFor={id}>` or `ariaLabel`. */
+export function Switch({ id, checked, onChange, disabled, ariaLabel }: SwitchProps) {
   return (
     <button
       id={id}
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(

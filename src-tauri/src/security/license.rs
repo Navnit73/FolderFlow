@@ -301,14 +301,15 @@ impl LicenseProvider for HttpJsonLicenseProvider {
         device: &'a DeviceContext,
     ) -> BoxFuture<'a, AppResult<ProviderActivationResult>> {
         Box::pin(async move {
-            let mut req = self.client.post(&self.config.activate_url).json(
-                &HttpActivateRequest {
+            let mut req = self
+                .client
+                .post(&self.config.activate_url)
+                .json(&HttpActivateRequest {
                     license_key,
                     device_name: &device.device_name,
                     platform: device.platform,
                     app_version: device.app_version,
-                },
-            );
+                });
             if let Some(tok) = &self.config.api_token {
                 req = req.bearer_auth(tok);
             }
@@ -359,14 +360,14 @@ impl LicenseProvider for HttpJsonLicenseProvider {
         license_key: &'a str,
     ) -> BoxFuture<'a, AppResult<()>> {
         Box::pin(async move {
-            let mut req = self
-                .client
-                .post(&self.config.deactivate_url)
-                .json(&HttpDeactivateRequest {
-                    license_id,
-                    instance_id,
-                    license_key,
-                });
+            let mut req =
+                self.client
+                    .post(&self.config.deactivate_url)
+                    .json(&HttpDeactivateRequest {
+                        license_id,
+                        instance_id,
+                        license_key,
+                    });
             if let Some(tok) = &self.config.api_token {
                 req = req.bearer_auth(tok);
             }
@@ -575,7 +576,7 @@ impl LicenseService {
     /// Validates and activates an offline Ed25519-signed license key (`FF1.<payload>.<sig>`)
     /// or `.fflicense` JSON document, persisting it to Keychain (`FR-211`, `FR-212`).
     pub fn activate_offline(&self, signed_input: &str) -> AppResult<LicenseStatus> {
-        let trimmed = signed_input.trim();
+        let trimmed = sanitize_license_input(signed_input);
         let payload = self.verify_offline_input(trimmed)?;
         if let Some(exp) = payload.expires_at_ms {
             if payload.edition != LicenseEdition::Lifetime && self.clock.now_ms() > exp {
@@ -641,7 +642,7 @@ impl LicenseService {
     /// Activates via the configured online license provider (`NFR-010`: user action only).
     /// Also detects offline signed tokens pasted into the standard key field automatically.
     pub async fn activate(&self, license_key: &str) -> AppResult<LicenseStatus> {
-        let trimmed = license_key.trim();
+        let trimmed = sanitize_license_input(license_key);
         if trimmed.is_empty() {
             return Err(AppError::validation(
                 "licenseKey",
@@ -739,7 +740,7 @@ impl LicenseService {
     }
 
     pub fn verify_offline_input(&self, input: &str) -> AppResult<SignedLicensePayload> {
-        let trimmed = input.trim();
+        let trimmed = sanitize_license_input(input);
         if trimmed.is_empty() {
             return Err(AppError::validation(
                 "licenseKey",
@@ -749,10 +750,7 @@ impl LicenseService {
 
         let (payload_b64, sig_b64) = if trimmed.starts_with('{') {
             let file: SignedLicenseFile = serde_json::from_str(trimmed).map_err(|_| {
-                AppError::validation(
-                    "licenseKey",
-                    "The offline license file is not valid JSON.",
-                )
+                AppError::validation("licenseKey", "The offline license file is not valid JSON.")
             })?;
             if file.format != LICENSE_FILE_FORMAT {
                 return Err(AppError::validation(
@@ -762,7 +760,7 @@ impl LicenseService {
             }
             (file.payload_b64, file.signature_b64)
         } else {
-            let compacted: String = trimmed.chars().filter(|c| !c.is_whitespace()).collect();
+            let compacted: String = trimmed.chars().filter(|c| !is_strip_char(*c)).collect();
             let Some(rest) = compacted.strip_prefix(OFFLINE_KEY_PREFIX) else {
                 return Err(AppError::validation(
                     "licenseKey",
@@ -785,9 +783,9 @@ impl LicenseService {
         let sig_bytes = URL_SAFE_NO_PAD
             .decode(sig_b64.as_bytes())
             .map_err(|_| AppError::validation("licenseKey", "Corrupted license key signature."))?;
-        let sig_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| {
-            AppError::validation("licenseKey", "Invalid Ed25519 signature length.")
-        })?;
+        let sig_arr: [u8; 64] = sig_bytes
+            .try_into()
+            .map_err(|_| AppError::validation("licenseKey", "Invalid Ed25519 signature length."))?;
         let signature = Signature::from_bytes(&sig_arr);
 
         let mut signed_msg = Vec::with_capacity(LICENSE_SIGNING_DOMAIN.len() + payload_bytes.len());
@@ -803,9 +801,10 @@ impl LicenseService {
                 )
             })?;
 
-        let payload: SignedLicensePayload = serde_json::from_slice(&payload_bytes).map_err(|_| {
-            AppError::validation("licenseKey", "License payload could not be parsed.")
-        })?;
+        let payload: SignedLicensePayload =
+            serde_json::from_slice(&payload_bytes).map_err(|_| {
+                AppError::validation("licenseKey", "License payload could not be parsed.")
+            })?;
         if payload.version != 1 || payload.license_id.trim().is_empty() {
             return Err(AppError::validation(
                 "licenseKey",
@@ -816,8 +815,16 @@ impl LicenseService {
     }
 }
 
+fn is_strip_char(c: char) -> bool {
+    c.is_whitespace() || matches!(c, '\u{feff}' | '\u{200b}' | '\u{200c}' | '\u{200d}')
+}
+
+fn sanitize_license_input(s: &str) -> &str {
+    s.trim_matches(is_strip_char)
+}
+
 fn looks_like_offline_token(s: &str) -> bool {
-    let trimmed = s.trim();
+    let trimmed = sanitize_license_input(s);
     trimmed.starts_with(OFFLINE_KEY_PREFIX) || trimmed.starts_with('{')
 }
 
@@ -914,7 +921,10 @@ mod tests {
         }
     }
 
-    fn build_service(now_ms: i64, provider: Arc<dyn LicenseProvider>) -> (LicenseService, SigningKey) {
+    fn build_service(
+        now_ms: i64,
+        provider: Arc<dyn LicenseProvider>,
+    ) -> (LicenseService, SigningKey) {
         let sk = test_signing_key();
         let svc = LicenseService::with_verifying_key(
             Arc::new(InMemoryKeychain::new()),
@@ -960,7 +970,10 @@ mod tests {
         // Signed `.fflicense` JSON file also activates safely.
         let dir = tempfile::tempdir().expect("tempdir");
         let file_path = dir.path().join("team.fflicense");
-        crate::test_support::write_file(&file_path, sign_file_json(&sk, &lifetime_payload()).as_bytes());
+        crate::test_support::write_file(
+            &file_path,
+            sign_file_json(&sk, &lifetime_payload()).as_bytes(),
+        );
         let file_status = svc2
             .activate_offline_file(&file_path)
             .expect("activate offline file");
@@ -1031,7 +1044,12 @@ mod tests {
             Arc::new(FixedClock::utc(2_000)),
             sk.verifying_key(),
         );
-        assert!(svc_before.activate_offline(&trial_tok).expect("active trial").licensed);
+        assert!(
+            svc_before
+                .activate_offline(&trial_tok)
+                .expect("active trial")
+                .licensed
+        );
 
         let svc_after = LicenseService::with_verifying_key(
             kc,
@@ -1060,12 +1078,21 @@ mod tests {
 
         let token = sign_payload(&sk, &lifetime_payload());
         // Offline token passed even through main `activate` activates cleanly with zero network!
-        let st = svc.activate(&token).await.expect("offline key works via activate");
+        let st = svc
+            .activate(&token)
+            .await
+            .expect("offline key works via activate");
         assert!(st.licensed);
-        assert_eq!(svc.status().expect("offline status").state, LicenseStateKind::ActiveOffline);
+        assert_eq!(
+            svc.status().expect("offline status").state,
+            LicenseStateKind::ActiveOffline
+        );
 
         // Online key when server is down surfaces a friendly message, without disrupting stored key.
-        let err = svc.activate("ONLINE-XXXX-YYYY").await.expect_err("server down");
+        let err = svc
+            .activate("ONLINE-XXXX-YYYY")
+            .await
+            .expect_err("server down");
         assert!(err.to_string().contains("Could not reach"));
         assert!(svc.status().expect("still licensed").licensed);
     }
@@ -1083,7 +1110,9 @@ mod tests {
                 let mut buf = [0u8; 4096];
                 let n = stream.read(&mut buf).await.expect("read");
                 let req = String::from_utf8_lossy(&buf[..n]);
-                let (status_line, json) = if req.contains("POST /activate") && req.contains("BAD-KEY") {
+                let (status_line, json) = if req.contains("POST /activate")
+                    && req.contains("BAD-KEY")
+                {
                     (
                         "400 Bad Request",
                         serde_json::json!({ "activated": false, "error": "Activation limit reached for this license key." })
@@ -1166,6 +1195,80 @@ mod tests {
                 .get_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
                 .expect("keychain check"),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn bug_034_offline_license_handles_bom_and_keychain_error_never_leaks_secret() {
+        struct LockedKeychain;
+        impl KeychainBackend for LockedKeychain {
+            fn get_secret(&self, _service: &str, _account: &str) -> AppResult<Option<String>> {
+                Err(AppError::Internal(
+                    "macOS Keychain is locked or denied access while trying to read the license."
+                        .to_owned(),
+                ))
+            }
+            fn set_secret(&self, _service: &str, _account: &str, _secret: &str) -> AppResult<()> {
+                Err(AppError::Internal(
+                    "macOS Keychain is locked or denied access while trying to save the license."
+                        .to_owned(),
+                ))
+            }
+            fn delete_secret(&self, _service: &str, _account: &str) -> AppResult<bool> {
+                Err(AppError::Internal(
+                    "macOS Keychain is locked or denied access while trying to delete the license."
+                        .to_owned(),
+                ))
+            }
+        }
+
+        let (svc, sk) = build_service(1_750_000_000_000, Arc::new(UnconfiguredOnlineProvider));
+        let token = sign_payload(&sk, &lifetime_payload());
+
+        // 1. Offline key pasted with UTF-8 BOM + whitespace must activate seamlessly via `activate`.
+        let bom_token = format!("\u{feff}  {token}\n  ");
+        let st_tok = svc
+            .activate(&bom_token)
+            .await
+            .expect("UTF-8 BOM before offline FF1 token must activate");
+        assert!(st_tok.licensed);
+
+        // 2. `.fflicense` JSON file saved with UTF-8 BOM must activate cleanly via `activate_offline_file`.
+        let file_json = sign_file_json(&sk, &lifetime_payload());
+        let bom_json = format!("\u{feff}\n{file_json}");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let fflicense = dir.path().join("with-bom.fflicense");
+        crate::test_support::write_file(&fflicense, bom_json.as_bytes());
+        let st_file = svc
+            .activate_offline_file(&fflicense)
+            .expect("UTF-8 BOM in .fflicense file must activate");
+        assert!(st_file.licensed);
+
+        // 3. Keychain save failure propagates an actionable error without leaking the raw token (`NFR-013`).
+        let mut parts = token
+            .strip_prefix(OFFLINE_KEY_PREFIX)
+            .expect("prefix")
+            .split('.');
+        let payload_b64 = parts.next().expect("payload");
+        let signature_b64 = parts.next().expect("sig");
+        let locked_svc = LicenseService::with_verifying_key(
+            Arc::new(LockedKeychain),
+            Arc::new(UnconfiguredOnlineProvider),
+            Arc::new(FixedClock::utc(1_750_000_000_000)),
+            sk.verifying_key(),
+        );
+        let err = locked_svc
+            .activate_offline(&token)
+            .expect_err("locked keychain must fail activation");
+        let msg = err.to_string();
+        assert!(msg.contains("Keychain is locked"), "unexpected msg: {msg}");
+        assert!(
+            !msg.contains(payload_b64),
+            "error must never leak raw license payload"
+        );
+        assert!(
+            !msg.contains(signature_b64),
+            "error must never leak raw signature"
         );
     }
 

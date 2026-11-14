@@ -3,7 +3,7 @@
 > **This file is the source of truth for progress.** Update it in the same change as the code.
 > Requirements live in [PRD.md](PRD.md). Test IDs are defined in [TESTING_STRATEGY.md](TESTING_STRATEGY.md). Audits live in [audits/](audits/).
 
-**Last updated:** 2026-11-14 · **Current phase:** Phase 7 — macOS integration ⬜ (not started)
+**Last updated:** 2026-11-14 · **Current phase:** Phase 8 — Quality assurance ✅ (complete) · Next: Phase 9 — Production release
 
 ## Status legend
 
@@ -27,8 +27,8 @@
 | 4 | Safe operations | ✅ | 65 / 42 (60 Rust · 5 TS) | [phase-4](audits/phase-4.md) ✅ | 2026-11-14 |
 | 5 | Preview & automation | ✅ | 43 / 30 (33 Rust · 10 TS) | [phase-5](audits/phase-5.md) ✅ | 2026-11-14 |
 | 6 | Advanced features | ✅ | 48 / 30 (36 Rust · 12 TS) | [phase-6](audits/phase-6.md) ✅ | 2026-11-14 |
-| 7 | macOS integration | ⬜ | 0 / 18 | ⬜ | — |
-| 8 | Quality assurance | ⬜ | 0 / 20 | ⬜ | — |
+| 7 | macOS integration | ✅ | 18 / 18 | [phase-7](audits/phase-7.md) ✅ | 2026-11-14 |
+| 8 | Quality assurance | ✅ | 24 / 20 (12 Rust failure · 5 E2E/A11y · 7 Benches) | [phase-8](audits/phase-8.md) ✅ | 2026-11-14 |
 | 9 | Production release | ⬜ | 0 / 8 | ⬜ | — |
 
 Test counts are the planned minimum; update as tests are added.
@@ -238,16 +238,16 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests first | Status |
 |---|---|---|---|
-| P7-T01 | Menu bar tray with live status + all items; app keeps running when window closes | R-TRAY-01..02 | ⬜ |
-| P7-T02 | Launch at login (`SMAppService`, macOS 13+) | R-LOGIN-01 | ⬜ |
-| P7-T03 | Sleep/wake + volume mount/unmount observers (small objc2/Swift shim) → reconcile | R-SYS-01..03 | ⬜ |
-| P7-T04 | Native notifications wired to notification service | R-NOTIF-05 | ⬜ |
-| P7-T05 | Keychain storage for license key | R-KEY-01..02 | ⬜ |
-| P7-T06 | License: offline Ed25519-signed key validation, activation/deactivation via provider (Q1) | R-LIC-01..06 | ⛔ Q1 |
-| P7-T07 | Keyboard shortcuts per FR-220 (no ⌘Z hijack inside inputs) | UI-KEYS-01..02 | ⬜ |
-| P7-T08 | License screen | UI-LIC-01 | ⬜ |
+| P7-T01 | Menu bar tray with live status + all items; app keeps running when window closes | R-TRAY-01..02, edge_07 | ✅ |
+| P7-T02 | Launch at login (`SMAppService`, macOS 13+) | R-LOGIN-01, `settings.test.tsx` | ✅ |
+| P7-T03 | Sleep/wake + volume mount/unmount observers (`ff-macos-events` `NSWorkspace` bridge) → reconcile | R-SYS-01..03, edge_07 | ✅ |
+| P7-T04 | Native notifications wired to notification service (`UNUserNotificationCenter`) | R-NOTIF-05 | ✅ |
+| P7-T05 | Keychain storage for license key | R-KEY-01..02 | ✅ |
+| P7-T06 | License: offline Ed25519-signed key & `.fflicense` validation, provider-agnostic activation/deactivation (`Q1` online vendor deferred behind `UnconfiguredOnlineProvider` + tested `HttpJsonLicenseProvider`) | R-LIC-01..06, BUG-034 | ✅ (offline complete; `Q1` online vendor deferred) |
+| P7-T07 | Keyboard shortcuts per FR-220 (no ⌘Z hijack inside inputs) | UI-KEYS-01..02 | ✅ |
+| P7-T08 | License screen & Sidebar/Tray navigation | UI-LIC-01 (`license.test.tsx`) | ✅ |
 
-**Exit criteria:** close window → monitoring continues → tray pause/resume works; sleep/wake triggers reconciliation; app works fully offline with license server unreachable. Audit-7 recorded.
+**Exit criteria:** close window → monitoring continues → tray pause/resume works; sleep/wake triggers reconciliation; app works fully offline with license server unreachable. Audit-7 recorded in [audits/phase-7.md](audits/phase-7.md). ✅ Met — see [audits/phase-7.md](audits/phase-7.md) (online provider `Q1` remains behind `UnconfiguredOnlineProvider` until chosen).
 
 ---
 
@@ -255,13 +255,15 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests | Status |
 |---|---|---|---|
-| P8-T01 | Fill coverage gaps (Rust ≥ 85% lines on `engine/`, `rules/`, `safe_fs` ≥ 95%) | — | ⬜ |
-| P8-T02 | Failure suite from spec §24.3 complete | R-FAIL-01..12 | ⬜ |
-| P8-T03 | Playwright E2E for key flows (onboarding, rule create, preview+execute, undo) | E2E-01..06 | ⬜ |
-| P8-T04 | Criterion benchmarks 1k/10k/50k/100k; record in `docs/BENCHMARKS.md` | BENCH-01..07 | ⬜ |
-| P8-T05 | Security audit (capabilities, CSP, path authority, `cargo audit`, `cargo deny`) | — | ⬜ |
-| P8-T06 | Accessibility audit (keyboard, VoiceOver labels, contrast of every token pair) | — | ⬜ |
-| P8-T07 | Full regression re-audit of phases 1–7 | — | ⬜ |
+| P8-T01 | Fill coverage gaps (Rust ≥ 85% lines on `engine/`, `rules/`, `safe_fs` ≥ 95%) | `cargo llvm-cov` (`engine/` 92.90%, `rules/` 95.37%, `safe_fs/` 95.07%) | ✅ |
+| P8-T02 | Failure suite from spec §24.3 complete | R-FAIL-01..12 (`failure_suite.rs`, 12/12) | ✅ |
+| P8-T03 | Playwright E2E for key flows (onboarding, folder manage, rule create, preview+execute, undo/review/CSV, settings/license) | E2E-01..06 (`tests/e2e/app.spec.ts`) | ✅ |
+| P8-T04 | Criterion benchmarks 1k/10k/50k/100k; record in `docs/BENCHMARKS.md` | BENCH-01..07 (`folderflow_benches`, `bench_idle_monitor`) | ✅ |
+| P8-T05 | Security audit (capabilities, CSP, path authority, `cargo audit`, `cargo deny`) | `capabilities/default.json`, `tauri.conf.json`, `cargo deny check`, `cargo audit`, `pnpm audit --prod` | ✅ |
+| P8-T06 | Accessibility audit (keyboard, VoiceOver/ARIA labels, WCAG 2.1 AA contrast & axe-core) | `UI-A11Y-01`, `categories.test.tsx`, `tests/e2e/app.spec.ts` (`@axe-core/playwright`) | ✅ |
+| P8-T07 | Full regression re-audit of phases 1–8 | `BUG-035`, `BUG-036`, `PROPTEST_CASES=10000`, 10× flake, [audits/phase-8.md](audits/phase-8.md) | ✅ |
+
+**Exit criteria:** coverage targets exceeded, 12/12 failure suite green, E2E & WCAG 2.1 AA 0 violations across all routes in Light & Dark modes, empirical `1k`–`100k` benchmarks recorded in `docs/BENCHMARKS.md`, security & supply-chain audits clean. Audit-8 recorded in [audits/phase-8.md](audits/phase-8.md). ✅ Met — see [audits/phase-8.md](audits/phase-8.md).
 
 ---
 
@@ -284,25 +286,25 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | # | Criterion | Verified by | Status |
 |---|---|---|---|
-| A01 | Multiple monitored folders | R-FOLD, E2E-01 | ⬜ |
-| A02 | Background monitoring | R-TRAY-01, manual | ⬜ |
-| A03 | Survives restart | R-RECON-02, R-RECOV | ⬜ |
-| A04 | Correct classification | R-CLS | ⬜ |
-| A05 | Custom rules | R-RULE, UI-RB | ⬜ |
-| A06 | Nested AND/OR | R-GRP (+proptest) | ⬜ |
-| A07 | Dynamic templates | R-TPL | ⬜ |
-| A08 | Preview accurate | R-PLAN, R-EXEC | ⬜ |
-| A09 | Dry-run never modifies | R-PLAN-01 snapshot test | ⬜ |
-| A10 | Safe move/copy/rename | R-MOVE, R-COPY, R-REN | ⬜ |
-| A11 | No silent overwrites | R-CONF, R-SFS | ⬜ |
-| A12 | Undo works | R-UNDO | ⬜ |
-| A13 | Interrupted ops recover | R-RECOV, R-FAIL | ⬜ |
-| A14 | Hash-based duplicates | R-DUP | ⬜ |
-| A15 | Scheduled automation | R-SCHED | ⬜ |
-| A16 | Menu bar | R-TRAY | ⬜ |
-| A17 | Fully offline | R-SEC network test | ⬜ |
-| A18 | Migrations work | R-DB | ⬜ |
-| A19 | Failures logged + surfaced | R-ERR, R-LOG | ⬜ |
-| A20 | All tests pass | CI | ⬜ |
-| A21 | Benchmarks recorded | BENCHMARKS.md | ⬜ |
-| A22 | Signed + notarized | P9 | ⬜ |
+| A01 | Multiple monitored folders | R-FOLD, E2E-01, E2E-02 | ✅ |
+| A02 | Background monitoring | R-TRAY-01..02, `bench_idle_monitor` | ✅ |
+| A03 | Survives restart | R-RECON-02, R-RECOV, R-FAIL-01..03 | ✅ |
+| A04 | Correct classification | R-CLS | ✅ |
+| A05 | Custom rules | R-RULE, UI-RB, E2E-03 | ✅ |
+| A06 | Nested AND/OR | R-GRP (+proptest 10k) | ✅ |
+| A07 | Dynamic templates | R-TPL (+proptest 10k) | ✅ |
+| A08 | Preview accurate | R-PLAN, R-EXEC, E2E-04 | ✅ |
+| A09 | Dry-run never modifies | R-PLAN-01, R-PLAN-11 snapshot test, E2E-01 | ✅ |
+| A10 | Safe move/copy/rename | R-MOVE, R-COPY, R-REN | ✅ |
+| A11 | No silent overwrites | R-CONF, R-SFS, R-FAIL-06 | ✅ |
+| A12 | Undo works | R-UNDO, E2E-05 | ✅ |
+| A13 | Interrupted ops recover | R-RECOV, R-FAIL-01..03 | ✅ |
+| A14 | Hash-based duplicates | R-DUP, R-HASH | ✅ |
+| A15 | Scheduled automation | R-SCHED | ✅ |
+| A16 | Menu bar | R-TRAY | ✅ |
+| A17 | Fully offline | R-SEC, R-LIC-01..06, E2E-06 | ✅ |
+| A18 | Migrations work | R-DB | ✅ |
+| A19 | Failures logged + surfaced | R-ERR, R-LOG, R-FAIL-03..10 | ✅ |
+| A20 | All tests pass | `pnpm gates && pnpm test:e2e`, `cargo test --workspace` (336 Rust + 109 Vitest + 5 Playwright, 10× flake pass) | ✅ |
+| A21 | Benchmarks recorded | [BENCHMARKS.md](BENCHMARKS.md) (`BENCH-01`..`07`) | ✅ |
+| A22 | Signed + notarized | P9 (Q3) | ⬜ |

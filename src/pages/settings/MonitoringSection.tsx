@@ -75,21 +75,33 @@ export function MonitoringSection() {
           className="h-control w-24 rounded-md border border-border-strong bg-surface px-2 text-sm text-fg"
         />
       </SettingRow>
-      <SettingRow label="Recursive scanning by default" description="Default setting when adding new monitored folders.">
+      <SettingRow
+        label="Recursive scanning by default"
+        htmlFor="mon-recursive-default"
+        description="Default setting when adding new monitored folders."
+      >
         <Switch
           id="mon-recursive-default"
           checked={m.recursiveByDefault}
           onChange={(checked) => patch({ recursiveByDefault: checked })}
         />
       </SettingRow>
-      <SettingRow label="Ignore hidden files" description="Skip dotfiles such as .DS_Store cleanly.">
+      <SettingRow
+        label="Ignore hidden files"
+        htmlFor="mon-ignore-hidden"
+        description="Skip dotfiles such as .DS_Store cleanly."
+      >
         <Switch
           id="mon-ignore-hidden"
           checked={m.ignoreHiddenFiles}
           onChange={(checked) => patch({ ignoreHiddenFiles: checked })}
         />
       </SettingRow>
-      <SettingRow label="Ignore temporary download files" description="Skip .crdownload, .part, .download, and browser locks.">
+      <SettingRow
+        label="Ignore temporary download files"
+        htmlFor="mon-ignore-temp"
+        description="Skip .crdownload, .part, .download, and browser locks."
+      >
         <Switch
           id="mon-ignore-temp"
           checked={m.ignoreTemporaryFiles}

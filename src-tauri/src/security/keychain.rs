@@ -106,10 +106,7 @@ impl KeychainBackend for InMemoryKeychain {
             ));
         }
         let mut guard = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-        guard.insert(
-            (service.to_owned(), account.to_owned()),
-            secret.to_owned(),
-        );
+        guard.insert((service.to_owned(), account.to_owned()), secret.to_owned());
         Ok(())
     }
 
@@ -155,9 +152,12 @@ mod tests {
     #[test]
     fn r_key_02_services_and_accounts_are_isolated_and_invalid_rejected() {
         let kc = InMemoryKeychain::new();
-        kc.set_secret("svc-a", "acct-1", "secret-a1").expect("set a1");
-        kc.set_secret("svc-a", "acct-2", "secret-a2").expect("set a2");
-        kc.set_secret("svc-b", "acct-1", "secret-b1").expect("set b1");
+        kc.set_secret("svc-a", "acct-1", "secret-a1")
+            .expect("set a1");
+        kc.set_secret("svc-a", "acct-2", "secret-a2")
+            .expect("set a2");
+        kc.set_secret("svc-b", "acct-1", "secret-b1")
+            .expect("set b1");
 
         assert_eq!(
             kc.get_secret("svc-a", "acct-1").expect("a1").as_deref(),
@@ -183,7 +183,9 @@ mod tests {
             Ok(()) => {
                 let got = live.get_secret(test_svc, &test_acct).expect("live read");
                 assert_eq!(got.as_deref(), Some("ephemeral-token"));
-                assert!(live.delete_secret(test_svc, &test_acct).expect("live delete"));
+                assert!(live
+                    .delete_secret(test_svc, &test_acct)
+                    .expect("live delete"));
                 assert_eq!(
                     live.get_secret(test_svc, &test_acct)
                         .expect("live after delete"),

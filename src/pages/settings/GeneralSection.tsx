@@ -63,6 +63,7 @@ export function GeneralSection() {
         <div>
           <SettingRow
             label="Launch at login"
+            htmlFor="launch-at-login"
             description={
               hint
                 ? `Automatically start FolderFlow when you sign in to macOS. ${hint}`
@@ -94,6 +95,7 @@ export function GeneralSection() {
           </SettingRow>
           <SettingRow
             label="Start monitoring automatically"
+            htmlFor="start-monitoring-auto"
             description="Begin watching enabled folders as soon as FolderFlow launches."
           >
             <Switch
@@ -109,6 +111,7 @@ export function GeneralSection() {
           </SettingRow>
           <SettingRow
             label="Start minimized to menu bar"
+            htmlFor="start-minimized"
             description="Hide the main window on launch while keeping background monitoring active."
           >
             <Switch
@@ -124,6 +127,7 @@ export function GeneralSection() {
           </SettingRow>
           <SettingRow
             label="Show menu bar icon"
+            htmlFor="show-menu-bar-icon"
             description="Display FolderFlow status and quick actions in the macOS menu bar."
           >
             <Switch

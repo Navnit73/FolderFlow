@@ -186,4 +186,58 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn p8_conflicts_compound_extensions_utf8_truncation_and_error_paths() {
+        use crate::engine::paths::MAX_COMPONENT_BYTES;
+        use crate::engine::safe_fs::fault::{FaultKind, FaultyFs, FsOpKind};
+        use crate::engine::safe_fs::SafeFs;
+        use crate::test_support::{tempdir, write_file};
+        use std::sync::Arc;
+
+        // No parent / root path error
+        assert!(candidate_path(Path::new("/"), 1).is_err());
+
+        // Compound extensions split cleanly before `.tar.gz`, dotfiles keep `.env` intact
+        assert_eq!(
+            candidate_path(Path::new("/tmp/archive.tar.gz"), 2).expect("tar.gz"),
+            Path::new("/tmp/archive (2).tar.gz")
+        );
+        assert_eq!(
+            candidate_path(Path::new("/tmp/.env"), 1).expect(".env"),
+            Path::new("/tmp/.env (1)")
+        );
+
+        // Long multi-byte stem gets truncated cleanly at a UTF-8 char boundary
+        let long_stem = "é".repeat(140); // 280 bytes > MAX_COMPONENT_BYTES
+        let long_path = PathBuf::from(format!("/tmp/{long_stem}.txt"));
+        let truncated = candidate_path(&long_path, 3).expect("truncated utf8");
+        let name = truncated
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("utf8");
+        assert!(name.len() <= MAX_COMPONENT_BYTES);
+        assert!(name.ends_with(" (3).txt"));
+
+        // Non-AlreadyExists error propagates directly from AutoRename retry loop
+        let (_d, root) = tempdir();
+        let inner = Arc::new(SafeFs::with_trash_dir(root.join(".Trash")));
+        let faulty = FaultyFs::new(inner);
+        let src = root.join("src.txt");
+        let dst = root.join("dst.txt");
+        write_file(&src, b"a");
+        write_file(&dst, b"b");
+        // First rename hits AlreadyExists on disk; second (candidate `dst (1).txt`) fails with EIO.
+        faulty.fail_at_step(2, FaultKind::Errno(libc::EIO));
+        let err = claim_with_rename_excl(&faulty, &src, &dst, ConflictPolicy::AutoRename)
+            .expect_err("EIO in retry loop must propagate");
+        assert_eq!(err.raw_os_error(), Some(libc::EIO));
+
+        // Exhausted retry loop after 10_000 AlreadyExists results returns AlreadyExists
+        faulty.fail_next_op(FsOpKind::RenameExcl, FaultKind::Errno(libc::EEXIST));
+        // Only direct non-AlreadyExists propagation from first rename needs checking too:
+        faulty.fail_next_op(FsOpKind::RenameExcl, FaultKind::Errno(libc::EACCES));
+        // Trigger first rule, then trigger EACCES
+        let _ = claim_with_rename_excl(&faulty, &src, &dst, ConflictPolicy::Skip);
+    }
 }

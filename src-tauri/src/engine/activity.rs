@@ -392,4 +392,139 @@ mod tests {
             "expected 1 header + 520 rows, got {line_count}"
         );
     }
+
+    #[tokio::test]
+    async fn p8_activity_list_undo_retry_clear_and_reveal_paths() {
+        use crate::database::repo_operations::ActivityFilter;
+        use crate::engine::operations::OpKind;
+        use crate::test_support::{mkdir, tempdir, write_file};
+
+        let (_d, root) = tempdir();
+        let src_dir = root.join("src");
+        let dst_dir = root.join("dst");
+        mkdir(&src_dir);
+        mkdir(&dst_dir);
+        let src = src_dir.join("invoice.pdf");
+        let dst = dst_dir.join("invoice.pdf");
+        write_file(&src, b"pdf-bytes");
+
+        let db = database::open_in_memory().await.expect("db");
+        repo_folders::insert(&db, "f1", "Src", &src_dir.to_string_lossy(), false)
+            .await
+            .expect("insert folder");
+        repo_rules::upsert_destination_root(&db, "dr1", &dst_dir.to_string_lossy())
+            .await
+            .expect("dest root");
+
+        let fs = Arc::new(SafeFs::with_trash_dir(root.join(".Trash")));
+        let clock = Arc::new(FixedClock::utc(1_700_000_000_000));
+        let svc = ActivityService::new(db.clone(), fs, clock);
+        let auth = svc.authority().await.expect("auth");
+
+        let done = svc
+            .organizer()
+            .execute(
+                OrganizeRequest::new(OpKind::Move, src.clone(), dst.clone()),
+                &auth,
+            )
+            .await
+            .expect("move")
+            .into_completed()
+            .expect("completed");
+
+        let page = svc
+            .list(
+                ActivityFilter::default(),
+                PageRequest {
+                    limit: 10,
+                    offset: 0,
+                },
+            )
+            .await
+            .expect("list");
+        assert_eq!(page.total, 1);
+
+        // Reveal Destination succeeds, Reveal Source fails (moved away), missing op fails
+        let rev_dst = svc
+            .resolve_reveal_path(&done.id, RevealTarget::Destination)
+            .await
+            .expect("reveal dst");
+        assert!(rev_dst.ends_with("invoice.pdf"));
+        assert!(svc
+            .resolve_reveal_path(&done.id, RevealTarget::Source)
+            .await
+            .is_err());
+        assert!(svc
+            .resolve_reveal_path("missing", RevealTarget::Source)
+            .await
+            .is_err());
+
+        // Completed op cannot be retried
+        assert!(svc.retry(&done.id).await.is_err());
+
+        // Undo via ActivityService
+        let undo_report = svc
+            .undo(UndoTarget::Ops {
+                op_ids: vec![done.id.clone()],
+                auto_rename_conflicts: false,
+            })
+            .await
+            .expect("undo");
+        assert_eq!(undo_report.undone.len(), 1);
+        let _undo_ref = svc.undo_service();
+        assert!(svc
+            .organizer()
+            .ledger()
+            .get(&done.id)
+            .await
+            .expect("get")
+            .is_some());
+
+        // Retrying a Failed op re-executes it to Completed
+        let failed_id = "op-failed-retry";
+        svc.organizer()
+            .ledger()
+            .record_intent(&crate::database::repo_operations::NewOperationRow {
+                id: failed_id.into(),
+                batch_id: None,
+                file_record_id: None,
+                operation_type: OpKind::Move,
+                source_path: src.to_string_lossy().into_owned(),
+                destination_path: dst.to_string_lossy().into_owned(),
+                staging_path: None,
+                original_name: "invoice.pdf".into(),
+                new_name: "invoice.pdf".into(),
+                dev: None,
+                ino: None,
+                size: None,
+                mtime_ns: None,
+                content_hash: None,
+                cross_volume: false,
+                rule_id: None,
+                reversible: true,
+                started_at: 1_700_000_000_000,
+            })
+            .await
+            .expect("intent");
+        sqlx::query("UPDATE operations SET status = ? WHERE id = ?")
+            .bind(OpStatus::Failed.as_str())
+            .bind(failed_id)
+            .execute(&db)
+            .await
+            .expect("mark failed");
+
+        let retried = svc.retry(failed_id).await.expect("retry failed op");
+        assert_eq!(retried.status, OpStatus::Completed);
+        assert!(svc.retry("nonexistent-op").await.is_err());
+
+        // Review resolution errors (missing + already resolved)
+        assert!(svc
+            .review_resolve("missing-rev", ReviewDecision::Skip)
+            .await
+            .is_err());
+
+        // Clear older history
+        let cleared = svc.clear(Some(1_800_000_000_000)).await.expect("clear");
+        assert!(cleared >= 1);
+    }
 }

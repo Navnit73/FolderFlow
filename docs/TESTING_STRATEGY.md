@@ -99,8 +99,8 @@ R-HASH-01..04 (known vectors; streaming buffer bound; cache invalidated on mtime
 ### Phase 7 — macOS (18)
 R-TRAY-01..02 · R-LOGIN-01 · R-SYS-01..03 · R-NOTIF-05 · R-KEY-01..02 · R-LIC-01..06 (valid/invalid/tampered signature, offline works with network off, expiry n/a for lifetime, deactivate) · UI-KEYS-01..02 · UI-LIC-01
 
-### Phase 8 — QA (20+)
-R-FAIL-01..12 (spec §24.3: interrupt move, interrupt copy, DB interruption, dest unavailable, source vanishes, dest appears mid-exec, ENOSPC, EACCES, corrupted config, watcher failure, duplicate events, rapid changes) · E2E-01..06 · BENCH-01..07 (scan, event latency, rule throughput, query, hash MB/s, RSS, CPU)
+### Phase 8 — QA (implemented & verified)
+R-FAIL-01..12 (`src-tauri/tests/failure_suite.rs`: interrupt move, interrupt copy, corrupted DB & ledger failure, dest unavailable, source vanishes, dest appears mid-exec, ENOSPC, EACCES, corrupted/unsafe config, watcher error & restart, flood backpressure & duplicate dedupe, active-file stability & stale guard) · E2E-01..06 (`tests/e2e/app.spec.ts` over stateful Tauri IPC mock) · WCAG 2.1 AA automated audit (`UI-A11Y-01` token/overlay contrast matrix in `scripts/check-tokens.test.ts` + `@axe-core/playwright` across all 20 routes & onboarding in Light and Dark modes) · BENCH-01..07 (`src-tauri/benches/folderflow_benches.rs` + `src-tauri/examples/bench_idle_monitor.rs` recorded in `docs/BENCHMARKS.md`) · Security/supply-chain (`cargo deny check`, `cargo audit`, `pnpm audit --prod`, `cargo llvm-cov --summary-only`: `engine/` 92.90%, `rules/` 95.37%, `engine/safe_fs/` 95.07%)
 
 ### Phase 9 — Release (8)
 Smoke tests on clean VMs: install, first launch, onboarding, organize, undo, restart persistence, offline, uninstall leaves user files intact.
@@ -108,11 +108,10 @@ Smoke tests on clean VMs: install, first launch, onboarding, organize, undo, res
 ## 6. CI gates (all must pass)
 
 ```bash
-cargo fmt --check
+cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test
-cargo audit
-pnpm lint && pnpm typecheck && pnpm test && pnpm build
-pnpm check:tokens
+cargo test --workspace
+cargo deny check && cargo audit
+pnpm gates && pnpm test:e2e && pnpm audit --prod
 ```
 No warning suppression to make a gate pass. Failing tests are fixed, not skipped.

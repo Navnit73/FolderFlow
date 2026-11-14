@@ -548,4 +548,102 @@ mod tests {
             "expected multi-hop cycle A -> B -> A to be rejected at save time"
         );
     }
+
+    #[tokio::test]
+    async fn p8_rule_service_crud_smart_presets_stats_and_folder_dry_run() {
+        use crate::rules::smart::SmartOrganizerSpec;
+        use crate::utils::clock::FixedClock;
+
+        let (svc, db) = setup().await;
+
+        // validate() & smart_catalog() & create_smart_preset()
+        let issues = svc.validate(&draft("Check"), None).await.expect("validate");
+        assert!(issues.is_empty());
+
+        let cat = svc.smart_catalog().await.expect("smart catalog");
+        assert!(!cat.default_screenshot_patterns.is_empty());
+
+        let smart = svc
+            .create_smart_preset(SmartOrganizerSpec::Screenshots {
+                extra_patterns: vec!["Grab*".into()],
+                destination: Some("/tmp/Screenshots".into()),
+                source_folders: vec![],
+            })
+            .await
+            .expect("create_smart_preset");
+        assert_eq!(smart.origin, RuleOrigin::Preset);
+
+        // add_destination_root + error paths
+        assert!(svc.get("missing-rule").await.is_err());
+        assert!(svc.delete("missing-rule").await.is_err());
+        assert!(svc.set_enabled("missing-rule", true).await.is_err());
+        assert!(svc
+            .record_stats("missing-rule", 1, 1, 0, 1_700_000_000_000)
+            .await
+            .is_err());
+
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        let added_root = svc
+            .add_destination_root(tmp.path())
+            .await
+            .expect("add_destination_root");
+        assert!(!added_root.is_empty());
+
+        // record_stats happy path + test_draft_on_folder
+        let updated = svc
+            .record_stats(&smart.id, 3, 2, 1, 1_700_000_005_000)
+            .await
+            .expect("record_stats");
+        assert_eq!(updated.stat_matched, 3);
+        assert_eq!(updated.stat_succeeded, 2);
+        assert_eq!(updated.stat_failed, 1);
+
+        let src_dir = tmp.path().join("Downloads");
+        std::fs::create_dir_all(&src_dir).expect("mkdir Downloads");
+        repo_folders::insert(
+            &db,
+            "f-test",
+            "Downloads",
+            &src_dir.to_string_lossy(),
+            false,
+        )
+        .await
+        .expect("insert folder");
+        let sf = crate::engine::scanner::ScannedFile {
+            facts: crate::engine::fs_view::FileFacts {
+                path: src_dir.join("receipt.pdf"),
+                name: "receipt.pdf".into(),
+                extension: Some("pdf".into()),
+                kind: crate::engine::fs_view::EntryKind::File,
+                size: 2048,
+                dev: 1,
+                ino: 100,
+                created_ns: Some(1_700_000_000_000_000_000),
+                modified_ns: 1_700_000_000_000_000_000,
+                is_hidden: false,
+            },
+            category: "documents".into(),
+            mime: Some("application/pdf".into()),
+            confidence: crate::engine::classifier::Confidence::High,
+        };
+        repo_files::upsert_batch(&db, "f-test", &[sf], 1_700_000_000_000)
+            .await
+            .expect("upsert scanned file");
+
+        let clock = FixedClock::utc(1_700_000_000_000);
+        let report = svc
+            .test_draft_on_folder(&draft("PDF Matcher"), "f-test", &clock)
+            .await
+            .expect("test_draft_on_folder");
+        assert_eq!(report.evaluated_files, 1);
+        assert_eq!(report.matched_files, 1);
+        assert_eq!(report.sample_matches.len(), 1);
+        assert!(svc
+            .test_draft_on_folder(&draft("Missing"), "no-such-folder", &clock)
+            .await
+            .is_err());
+
+        // preset not found & valid preset creation
+        assert!(svc.create_from_preset("nonexistent-preset").await.is_err());
+    }
 }

@@ -10,7 +10,7 @@ const buttonVariants = cva(
         primary: "bg-accent text-fg-on-accent hover:bg-accent-hover disabled:bg-muted",
         secondary: "border border-border-strong bg-surface text-fg hover:bg-hover active:bg-active",
         ghost: "text-fg-muted hover:bg-hover hover:text-fg active:bg-active",
-        danger: "bg-danger text-fg-on-accent hover:bg-danger-hover disabled:bg-muted",
+        danger: "bg-danger-solid text-fg-on-accent hover:bg-danger-solid-hover disabled:bg-muted",
       },
       size: {
         default: "h-control px-3",

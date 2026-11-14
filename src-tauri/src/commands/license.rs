@@ -63,4 +63,3 @@ pub async fn license_pick_and_activate_offline_file(
 pub async fn license_deactivate(state: State<'_, AppState>) -> Result<LicenseStatus, UiError> {
     Ok(state.license.deactivate().await?)
 }
-

@@ -25,7 +25,11 @@ pub(crate) fn move_to_trash_impl(
     trash_via_ns_file_manager(path)
 }
 
-fn move_into_trash_dir(fs: &SafeFs, path: &Path, trash_dir: &Path) -> io::Result<PathBuf> {
+pub(crate) fn move_into_trash_dir(
+    fs: &dyn Fs,
+    path: &Path,
+    trash_dir: &Path,
+) -> io::Result<PathBuf> {
     // Verify source exists before creating trash_dir.
     let pre = fs.lstat(path)?;
     fs.mkdir_p(trash_dir)?;

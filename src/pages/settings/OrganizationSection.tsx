@@ -158,6 +158,7 @@ export function OrganizationSection() {
 
       <SettingRow
         label="Auto-create missing destination folders"
+        htmlFor="org-autocreate"
         description="Automatically create dynamic subfolders such as 2026/Invoices when moving files."
       >
         <Switch

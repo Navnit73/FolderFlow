@@ -260,5 +260,50 @@ describe("Settings sections (Monitoring, Organization, Performance, Notification
     await userEvent.upload(fileInput, huge);
     expect(await screen.findByRole("alert")).toHaveTextContent(/5 MB/i);
   });
+
+  it("GeneralSection persists launchAtLogin, startMinimized, showMenuBarIcon, handles requires_approval, and surfaces save errors", async () => {
+    commands.loginItemStatus.mockResolvedValueOnce(ok("requires_approval"));
+    await renderSettingsAt("general");
+
+    const loginBtn = await screen.findByRole("button", { name: /Open Login Items/i });
+    await userEvent.click(loginBtn);
+    expect(commands.openLoginItemsSettings).toHaveBeenCalledTimes(1);
+
+    commands.settingsUpdate.mockResolvedValueOnce(err("SMAppService requires approval"));
+    const launchSwitch = document.getElementById("launch-at-login") as HTMLElement;
+    expect(launchSwitch.getAttribute("aria-checked")).toBe("false");
+    await userEvent.click(launchSwitch);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("SMAppService requires approval");
+    await waitFor(() => expect(launchSwitch.getAttribute("aria-checked")).toBe("false"));
+
+    await userEvent.click(launchSwitch);
+    await waitFor(() =>
+      expect(commands.settingsUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          general: expect.objectContaining({ launchAtLogin: true }),
+        }),
+      ),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await userEvent.click(document.getElementById("start-minimized") as HTMLElement);
+    await waitFor(() =>
+      expect(commands.settingsUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          general: expect.objectContaining({ startMinimized: true }),
+        }),
+      ),
+    );
+
+    await userEvent.click(document.getElementById("show-menu-bar-icon") as HTMLElement);
+    await waitFor(() =>
+      expect(commands.settingsUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          general: expect.objectContaining({ showMenuBarIcon: false }),
+        }),
+      ),
+    );
+  });
 });
 

@@ -41,18 +41,18 @@
   --ff-gray-900: #1b1b1e;
   --ff-gray-950: #141416;
 
-  /* Brand accent (calm blue) */
-  --ff-blue-400: #4f9bff;
-  --ff-blue-500: #0a7cff;
-  --ff-blue-600: #0066d6;
+  /* Brand accent (calm blue; WCAG AA compliant with white text & dark surfaces) */
+  --ff-blue-400: #86bdff;
+  --ff-blue-500: #005cc2;
+  --ff-blue-600: #00499e;
 
   /* Signals */
-  --ff-green-500: #2fa84f;
-  --ff-green-400: #3dc265;
-  --ff-amber-500: #c98a00;
+  --ff-green-500: #116b2d;
+  --ff-green-400: #4ade80;
+  --ff-amber-500: #874f00;
   --ff-amber-400: #f0b429;
-  --ff-red-500: #d93b30;
-  --ff-red-400: #ff5f57;
+  --ff-red-500: #b82319;
+  --ff-red-400: #ff9992;
 }
 
 /* -----------------------------------------------------------------------------
@@ -76,7 +76,7 @@
   /* Text */
   --ff-fg: #1d1d1f;
   --ff-fg-muted: #5f5f66;
-  --ff-fg-subtle: #8a8a91;
+  --ff-fg-subtle: #66666d;
   --ff-fg-disabled: #b4b4ba;
   --ff-fg-on-accent: #ffffff;
 
@@ -88,19 +88,21 @@
   /* Accent */
   --ff-accent: var(--ff-blue-500);
   --ff-accent-hover: var(--ff-blue-600);
-  --ff-accent-subtle: rgb(10 124 255 / 0.10);
-  --ff-accent-fg: var(--ff-blue-600);        /* accent-colored text/links */
+  --ff-accent-subtle: rgb(0 92 194 / 0.10);
+  --ff-accent-fg: var(--ff-blue-500);        /* accent-colored text/links */
 
   /* Status */
   --ff-success: var(--ff-green-500);
-  --ff-success-subtle: rgb(47 168 79 / 0.12);
+  --ff-success-subtle: rgb(17 107 45 / 0.12);
   --ff-warning: var(--ff-amber-500);
-  --ff-warning-subtle: rgb(201 138 0 / 0.13);
+  --ff-warning-subtle: rgb(135 79 0 / 0.13);
   --ff-danger: var(--ff-red-500);
-  --ff-danger-hover: #c02f25;
-  --ff-danger-subtle: rgb(217 59 48 / 0.10);
+  --ff-danger-hover: #961b13;
+  --ff-danger-solid: var(--ff-red-500);
+  --ff-danger-solid-hover: #961b13;
+  --ff-danger-subtle: rgb(184 35 25 / 0.10);
   --ff-info: var(--ff-blue-500);
-  --ff-info-subtle: rgb(10 124 255 / 0.10);
+  --ff-info-subtle: rgb(0 92 194 / 0.10);
 
   /* Monitoring status dot */
   --ff-status-active: var(--ff-green-500);
@@ -109,19 +111,19 @@
   --ff-status-idle: var(--ff-gray-400);
 
   /* File categories (used by CategoryBadge, storage chart) */
-  --ff-cat-documents: #3b6fd4;
-  --ff-cat-images: #c2410c;
-  --ff-cat-videos: #9333ea;
-  --ff-cat-audio: #db2777;
-  --ff-cat-archives: #a16207;
-  --ff-cat-spreadsheets: #15803d;
-  --ff-cat-presentations: #ea580c;
+  --ff-cat-documents: #2f5ec4;
+  --ff-cat-images: #b83b0a;
+  --ff-cat-videos: #7e22ce;
+  --ff-cat-audio: #be185d;
+  --ff-cat-archives: #854d0e;
+  --ff-cat-spreadsheets: #137333;
+  --ff-cat-presentations: #c2410c;
   --ff-cat-installers: #4b5563;
-  --ff-cat-design: #c026d3;
+  --ff-cat-design: #a21caf;
   --ff-cat-development: #0e7490;
   --ff-cat-fonts: #6d28d9;
-  --ff-cat-ebooks: #b45309;
-  --ff-cat-other: #71717a;
+  --ff-cat-ebooks: #92400e;
+  --ff-cat-other: #64646c;
 
   /* Elevation (used sparingly: popovers, dialogs, menus only) */
   --ff-shadow-popover: 0 4px 16px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.05);
@@ -151,8 +153,8 @@
   --ff-bg-popover: var(--ff-gray-800);
 
   --ff-fg: #f2f2f4;
-  --ff-fg-muted: #a6a6ae;
-  --ff-fg-subtle: #7d7d85;
+  --ff-fg-muted: #afafb8;
+  --ff-fg-subtle: #9d9da6;
   --ff-fg-disabled: #55555b;
   --ff-fg-on-accent: #ffffff;
 
@@ -161,19 +163,21 @@
   --ff-border-focus: var(--ff-blue-400);
 
   --ff-accent: var(--ff-blue-500);
-  --ff-accent-hover: var(--ff-blue-400);
-  --ff-accent-subtle: rgb(79 155 255 / 0.16);
+  --ff-accent-hover: #0a68d8;
+  --ff-accent-subtle: rgb(112 175 255 / 0.16);
   --ff-accent-fg: var(--ff-blue-400);
 
   --ff-success: var(--ff-green-400);
-  --ff-success-subtle: rgb(61 194 101 / 0.15);
+  --ff-success-subtle: rgb(74 222 128 / 0.15);
   --ff-warning: var(--ff-amber-400);
   --ff-warning-subtle: rgb(240 180 41 / 0.15);
   --ff-danger: var(--ff-red-400);
-  --ff-danger-hover: #ff7b74;
-  --ff-danger-subtle: rgb(255 95 87 / 0.15);
+  --ff-danger-hover: #ffb5b0;
+  --ff-danger-solid: #c92a20;
+  --ff-danger-solid-hover: #ad2118;
+  --ff-danger-subtle: rgb(255 130 122 / 0.15);
   --ff-info: var(--ff-blue-400);
-  --ff-info-subtle: rgb(79 155 255 / 0.15);
+  --ff-info-subtle: rgb(112 175 255 / 0.15);
 
   --ff-status-active: var(--ff-green-400);
   --ff-status-paused: var(--ff-amber-400);
@@ -213,26 +217,28 @@
     --ff-bg-overlay: rgb(0 0 0 / 0.55);
     --ff-bg-popover: var(--ff-gray-800);
     --ff-fg: #f2f2f4;
-    --ff-fg-muted: #a6a6ae;
-    --ff-fg-subtle: #7d7d85;
+    --ff-fg-muted: #afafb8;
+    --ff-fg-subtle: #9d9da6;
     --ff-fg-disabled: #55555b;
     --ff-fg-on-accent: #ffffff;
     --ff-border: rgb(255 255 255 / 0.08);
     --ff-border-strong: rgb(255 255 255 / 0.16);
     --ff-border-focus: var(--ff-blue-400);
     --ff-accent: var(--ff-blue-500);
-    --ff-accent-hover: var(--ff-blue-400);
-    --ff-accent-subtle: rgb(79 155 255 / 0.16);
+    --ff-accent-hover: #0a68d8;
+    --ff-accent-subtle: rgb(112 175 255 / 0.16);
     --ff-accent-fg: var(--ff-blue-400);
     --ff-success: var(--ff-green-400);
-    --ff-success-subtle: rgb(61 194 101 / 0.15);
+    --ff-success-subtle: rgb(74 222 128 / 0.15);
     --ff-warning: var(--ff-amber-400);
     --ff-warning-subtle: rgb(240 180 41 / 0.15);
     --ff-danger: var(--ff-red-400);
-    --ff-danger-hover: #ff7b74;
-    --ff-danger-subtle: rgb(255 95 87 / 0.15);
+    --ff-danger-hover: #ffb5b0;
+    --ff-danger-solid: #c92a20;
+    --ff-danger-solid-hover: #ad2118;
+    --ff-danger-subtle: rgb(255 130 122 / 0.15);
     --ff-info: var(--ff-blue-400);
-    --ff-info-subtle: rgb(79 155 255 / 0.15);
+    --ff-info-subtle: rgb(112 175 255 / 0.15);
     --ff-status-active: var(--ff-green-400);
     --ff-status-paused: var(--ff-amber-400);
     --ff-status-error: var(--ff-red-400);
@@ -383,6 +389,8 @@
   --color-warning-subtle: var(--ff-warning-subtle);
   --color-danger: var(--ff-danger);
   --color-danger-hover: var(--ff-danger-hover);
+  --color-danger-solid: var(--ff-danger-solid);
+  --color-danger-solid-hover: var(--ff-danger-solid-hover);
   --color-danger-subtle: var(--ff-danger-subtle);
   --color-info: var(--ff-info);
   --color-info-subtle: var(--ff-info-subtle);

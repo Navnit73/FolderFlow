@@ -82,3 +82,7 @@ Icon
 # ── Misc temp ───────────────────────────────────────────────
 tmp/
 *.tmp
+
+# ── Test / Playwright artifacts ─────────────────────────────
+playwright-report/
+test-results/

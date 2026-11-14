@@ -328,3 +328,197 @@ fn bug_021_mkdir_p_allows_macos_root_system_links_while_rejecting_other_symlinks
         .expect_err("user symlink component must still be rejected");
     assert_eq!(err.kind(), ErrorKind::InvalidInput);
 }
+
+#[test]
+fn p8_safe_fs_edge_cases_and_trait_coverage() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_d, root) = tempdir();
+    let default_fs = SafeFs::default();
+    let trash_dir = root.join(".Trash");
+    let fs = SafeFs::with_trash_dir(trash_dir.clone());
+
+    // 1. CopyOutput & Blake3Hash Debug/Display helpers
+    let src = root.join("sample.bin");
+    write_file(&src, b"hello-safe-fs");
+    let dst = root.join("copy.bin");
+    let out = fs.copy_excl(&src, &dst).expect("copy_excl");
+    let hex_disp = format!("{}", out.blake3);
+    let dbg_disp = format!("{:?}", out.blake3);
+    assert!(dbg_disp.starts_with("Blake3Hash("));
+    assert_eq!(hex_disp.len(), 64);
+
+    // 2. Non-regular file rejected by copy_excl / hash_file
+    let dir_target = root.join("adir");
+    mkdir(&dir_target);
+    let err = fs
+        .copy_excl(&dir_target, &root.join("dir_copy"))
+        .expect_err("directory cannot be copy_excl'd");
+    assert_eq!(err.kind(), ErrorKind::InvalidInput);
+
+    // 3. rename_excl interior NUL validation
+    let nul_path = std::path::Path::new(OsStr::from_bytes(b"/tmp/bad\0src"));
+    assert_eq!(
+        fs.rename_excl(nul_path, &root.join("ok.txt"))
+            .expect_err("NUL src")
+            .kind(),
+        ErrorKind::InvalidInput
+    );
+    assert_eq!(
+        fs.rename_excl(&src, nul_path).expect_err("NUL dst").kind(),
+        ErrorKind::InvalidInput
+    );
+
+    // 4. ensure_no_symlink_ancestors & mkdir_p reject file ancestors
+    let err_anc = fs
+        .ensure_no_symlink_ancestors(&src.join("child.txt"), &root)
+        .expect_err("file ancestor must be rejected");
+    assert_eq!(err_anc.kind(), ErrorKind::InvalidInput);
+
+    let err_mk = fs
+        .mkdir_p(&src.join("sub"))
+        .expect_err("mkdir_p under file component must fail");
+    assert_eq!(err_mk.kind(), ErrorKind::AlreadyExists);
+
+    // 5. remove_verified_source rejects wrong path token
+    let pre = fs.lstat(&src).expect("lstat src");
+    let token = fs
+        .verify_copied(&src, &pre, &dst, &out)
+        .expect("verify_copied");
+    assert_eq!(token.blake3(), out.blake3);
+    let wrong_path_err = fs
+        .remove_verified_source(&root.join("other.txt"), token)
+        .expect_err("token bound to original source_path");
+    assert_eq!(wrong_path_err.kind(), ErrorKind::InvalidInput);
+
+    // 6. stat_fs_free_bytes walks up nonexistent children
+    let deep_nonexistent = root.join("missing/nested/deep/file.bin");
+    let free = fs
+        .stat_fs_free_bytes(&deep_nonexistent)
+        .expect("stat_fs_free_bytes on missing descendant");
+    assert!(free > 0);
+
+    // 7. FaultyFs forwarding & fsync_dir fault coverage
+    let faulty = FaultyFs::new(Arc::new(fs.clone()));
+    assert_eq!(faulty.hash_file(&src).expect("hash_file").1, out.blake3);
+    assert!(faulty
+        .rmdir_if_empty(&dir_target)
+        .expect("empty dir removed"));
+    assert!(!faulty
+        .rmdir_if_empty(&dir_target)
+        .expect("already absent returns false"));
+    assert!(faulty.fsync_count() >= 1);
+    faulty.fail_next_op(FsOpKind::FsyncDir, FaultKind::Errno(libc::EIO));
+    let fsync_err = faulty
+        .fsync_dir(&root)
+        .expect_err("faulty fsync_dir should fail");
+    assert_eq!(fsync_err.raw_os_error(), Some(libc::EIO));
+
+    // 8. Cross-volume trash fallback (move_into_trash_dir via FaultyFs EXDEV) & extensionless naming
+    let xv_src_dir = root.join("vol_a");
+    mkdir(&xv_src_dir);
+    mkdir(&trash_dir);
+    let no_ext1 = xv_src_dir.join("README");
+    let no_ext2 = xv_src_dir.join("README");
+    write_file(&no_ext1, b"first-readme");
+    faulty.simulate_cross_volume(xv_src_dir.clone(), trash_dir.clone());
+    let t1 = super::trash::move_into_trash_dir(&faulty, &no_ext1, &trash_dir)
+        .expect("EXDEV move to trash #1");
+    assert!(t1.ends_with("README"));
+    assert!(!fs.exists_no_follow(&no_ext1));
+
+    write_file(&no_ext2, b"second-readme");
+    let t2 = super::trash::move_into_trash_dir(&faulty, &no_ext2, &trash_dir)
+        .expect("EXDEV collision suffix move to trash #2");
+    assert!(t2.ends_with("README (1)"), "got {}", t2.display());
+    assert_eq!(std::fs::read(&t2).expect("read t2"), b"second-readme");
+
+    // EXDEV copy_excl AlreadyExists race + non-AlreadyExists error + trailing dot name + rmdir_if_empty on file
+    let trailing_dot = xv_src_dir.join("trailing.");
+    write_file(&trailing_dot, b"dot-bytes");
+    faulty.fail_next_op(FsOpKind::CopyExcl, FaultKind::Errno(libc::EEXIST));
+    let t_dot = super::trash::move_into_trash_dir(&faulty, &trailing_dot, &trash_dir)
+        .expect("EXDEV trailing dot retries AlreadyExists cleanly");
+    assert!(t_dot.ends_with("trailing. (1)"), "got {}", t_dot.display());
+
+    let exdev_fail = xv_src_dir.join("exdev_err.txt");
+    write_file(&exdev_fail, b"err");
+    faulty.fail_next_op(FsOpKind::CopyExcl, FaultKind::Errno(libc::ENOSPC));
+    assert_eq!(
+        super::trash::move_into_trash_dir(&faulty, &exdev_fail, &trash_dir)
+            .expect_err("copy_excl ENOSPC propagates")
+            .raw_os_error(),
+        Some(libc::ENOSPC)
+    );
+    faulty.fail_next_op(FsOpKind::RenameExcl, FaultKind::Errno(libc::EIO));
+    assert_eq!(
+        super::trash::move_into_trash_dir(&faulty, &exdev_fail, &trash_dir)
+            .expect_err("rename_excl EIO propagates")
+            .raw_os_error(),
+        Some(libc::EIO)
+    );
+    assert!(
+        fs.rmdir_if_empty(&dst).is_err(),
+        "rmdir on regular file fails ENOTDIR"
+    );
+
+    // 9. Production NSFileManager Trash paths (NotFound, UTF-8 validation, PermissionDenied, real Trash + cleanup)
+    let missing = root.join("does-not-exist-in-prod-trash.txt");
+    let prod_missing = default_fs
+        .move_to_trash(&missing)
+        .expect_err("missing file fails NotFound");
+    assert_eq!(prod_missing.kind(), ErrorKind::NotFound);
+
+    let non_utf8 = std::path::Path::new(OsStr::from_bytes(b"/tmp/invalid_\xff_name"));
+    let non_utf8_err = default_fs
+        .move_to_trash(non_utf8)
+        .expect_err("non-UTF-8 rejected");
+    assert_eq!(non_utf8_err.kind(), ErrorKind::InvalidInput);
+
+    // PermissionDenied via read-only directory on NSFileManager
+    let ro_dir = root.join("ro_dir");
+    mkdir(&ro_dir);
+    let ro_file = ro_dir.join("locked.txt");
+    write_file(&ro_file, b"locked");
+    #[allow(clippy::disallowed_methods)]
+    {
+        std::fs::set_permissions(&ro_dir, std::fs::Permissions::from_mode(0o555))
+            .expect("chmod 555");
+    }
+    let ro_err = default_fs
+        .move_to_trash(&ro_file)
+        .expect_err("trashing inside read-only dir fails with PermissionDenied");
+    assert_eq!(ro_err.kind(), ErrorKind::PermissionDenied);
+    assert_eq!(
+        fs.mkdir_p(&ro_dir.join("blocked_subdir"))
+            .expect_err("mkdir_p inside read-only parent fails")
+            .kind(),
+        ErrorKind::PermissionDenied
+    );
+    #[allow(clippy::disallowed_methods)]
+    {
+        std::fs::set_permissions(&ro_dir, std::fs::Permissions::from_mode(0o755))
+            .expect("restore chmod");
+    }
+
+    assert!(
+        fs.stat_fs_free_bytes(std::path::Path::new("nonexistent_rel_entry"))
+            .expect("relative fallback to /")
+            > 0
+    );
+
+    // Exercise happy path of NSFileManager trash and immediately remove our uniquely named temp item from ~/.Trash.
+    let prod_tmp = root.join("folderflow_p8_trash_probe.txt");
+    write_file(&prod_tmp, b"trash-probe");
+    if let Ok(trashed_real) = default_fs.move_to_trash(&prod_tmp) {
+        assert!(!fs.exists_no_follow(&prod_tmp));
+        if let Some(name) = trashed_real.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with("folderflow_p8_trash_probe") {
+                #[allow(clippy::disallowed_methods)]
+                let _ = std::fs::remove_file(&trashed_real);
+            }
+        }
+    }
+}

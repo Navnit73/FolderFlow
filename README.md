@@ -2,7 +2,7 @@
 
 **Your files organized automatically.** An offline-first, privacy-first automatic file organizer for macOS 13+, built with Tauri 2, Rust and React.
 
-> Status: **Phase 6 (advanced features) complete.** Next: Phase 7 — macOS integration. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
+> Status: **Phase 8 (Quality assurance) complete.** Next: Phase 9 — Production release. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
 
 ## Documentation
 
@@ -14,6 +14,7 @@
 | [Database](docs/DATABASE.md) | SQLite schema |
 | [Safety model](docs/SAFETY_MODEL.md) | How files are never lost or overwritten |
 | [Testing strategy](docs/TESTING_STRATEGY.md) | TDD process and test catalog |
+| [Benchmarks](docs/BENCHMARKS.md) | `1k`–`100k` empirical baselines & `NFR-022` budgets |
 | [Audit process](docs/AUDIT_PROCESS.md) | End-of-phase bug re-audit |
 | [Design system](docs/DESIGN_SYSTEM.md) | UI rules; theme lives in [`src/styles/theme.css`](src/styles/theme.css) |
 | [Decisions](docs/DECISIONS.md) · [Bugs](docs/BUGS.md) · [Changelog](docs/CHANGELOG.md) | |
@@ -31,8 +32,8 @@ pnpm bindings           # regenerate src/bindings.ts after changing Rust command
 Gates (all must pass before a task is done — see [CLAUDE.md](CLAUDE.md)):
 
 ```bash
-pnpm gates                                   # lint, typecheck, test, build, check:tokens
-cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test && cargo audit
+pnpm gates && pnpm test:e2e && pnpm audit --prod
+cd src-tauri && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --workspace && cargo deny check && cargo audit
 ```
 
 `pnpm build` must run before the first `cargo` build: Tauri embeds `dist/` at compile time.
@@ -46,4 +47,3 @@ App data: `~/Library/Application Support/com.folderflow.desktop/` · Logs: `~/Li
 ```bash
 export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
 ```
-# FolderFlow

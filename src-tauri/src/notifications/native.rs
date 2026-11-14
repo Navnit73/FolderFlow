@@ -218,7 +218,10 @@ mod tests {
         assert_eq!(ui_sink.records().len(), 1);
         let first_native = native.snapshot();
         assert_eq!(first_native.len(), 1);
-        assert_eq!(first_native[0].kind, NotificationKind::DestinationUnavailable);
+        assert_eq!(
+            first_native[0].kind,
+            NotificationKind::DestinationUnavailable
+        );
 
         // Two rapid success notifications batch into 1 native notification (never 1 per file).
         svc.notify(NotificationInput::success_summary(Some("f1".into()), 2));

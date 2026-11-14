@@ -874,9 +874,9 @@ impl FolderTask {
                 Ok(())
             }
             Flow::Timeout
-            | Flow::Command(Command::Resume | Command::Rescan | Command::Recheck | Command::Refresh) => {
-                Ok(())
-            }
+            | Flow::Command(
+                Command::Resume | Command::Rescan | Command::Recheck | Command::Refresh,
+            ) => Ok(()),
         }
     }
 

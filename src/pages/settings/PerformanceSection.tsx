@@ -58,6 +58,7 @@ export function PerformanceSection() {
       </SettingRow>
       <SettingRow
         label="Background processing"
+        htmlFor="perf-bg"
         description="Continue scheduled and watcher organization tasks cleanly in the background."
       >
         <Switch
@@ -68,6 +69,7 @@ export function PerformanceSection() {
       </SettingRow>
       <SettingRow
         label="Compute BLAKE3 content hashes during folder scans"
+        htmlFor="perf-hash-scan"
         description="Pre-warms the duplicate cache during directory scans for instant duplicate detection."
       >
         <Switch

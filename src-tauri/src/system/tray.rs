@@ -162,7 +162,10 @@ pub fn compute_tray_snapshot(status: &MonitoringStatus, pipeline_busy: bool) -> 
         "State: Active".to_owned()
     };
 
-    let tooltip = format!("FolderFlow — {}", status_label.trim_start_matches("Status: "));
+    let tooltip = format!(
+        "FolderFlow — {}",
+        status_label.trim_start_matches("Status: ")
+    );
 
     TraySnapshot {
         visual_state,
@@ -327,7 +330,12 @@ pub fn hide_main_window(app: &AppHandle, show_menu_bar_icon: bool) {
 }
 
 /// Creates the menu bar tray icon and handles live updates + menu actions (`P7-T01`).
-pub fn init_tray(app: &AppHandle, visible: bool, initial_status: &MonitoringStatus, busy: bool) -> AppResult<()> {
+pub fn init_tray(
+    app: &AppHandle,
+    visible: bool,
+    initial_status: &MonitoringStatus,
+    busy: bool,
+) -> AppResult<()> {
     let snap = compute_tray_snapshot(initial_status, busy);
     let menu = build_menu(app, &snap)?;
     let icon = Image::new_owned(render_status_icon_rgba(snap.visual_state), 18, 18);
@@ -581,7 +589,9 @@ mod tests {
 
         // Verify background monitoring + rescan continue functioning cleanly until explicit quit.
         let dir = tempfile::tempdir().expect("tempdir");
-        let db = database::open(&dir.path().join("app.db")).await.expect("db");
+        let db = database::open(&dir.path().join("app.db"))
+            .await
+            .expect("db");
         let cats = CategoryService::new(db.clone());
         cats.ensure_builtins().await.expect("builtins");
         let classifier = Arc::new(Classifier::new(cats.list().await.expect("cats")));
@@ -653,7 +663,46 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-        assert!(seen, "background monitor must keep organizing/scanning after window close");
+        assert!(
+            seen,
+            "background monitor must keep organizing/scanning after window close"
+        );
         monitor.shutdown().await;
+    }
+
+    #[test]
+    fn edge_07_tray_zero_folders_and_close_vs_quit_disposition() {
+        let empty_active = compute_tray_snapshot(
+            &MonitoringStatus {
+                paused: false,
+                folders: vec![],
+            },
+            false,
+        );
+        assert_eq!(empty_active.visual_state, TrayVisualState::Active);
+        assert!(!empty_active.can_pause_all);
+        assert!(!empty_active.can_resume_all);
+        assert!(!empty_active.can_organize_now);
+
+        let empty_paused = compute_tray_snapshot(
+            &MonitoringStatus {
+                paused: true,
+                folders: vec![],
+            },
+            true,
+        );
+        assert_eq!(empty_paused.visual_state, TrayVisualState::Paused);
+        assert!(!empty_paused.can_pause_all);
+        assert!(!empty_paused.can_resume_all);
+        assert!(!empty_paused.can_organize_now);
+
+        assert_eq!(
+            window_close_disposition(false),
+            WindowCloseDisposition::HideToBackground
+        );
+        assert_eq!(
+            window_close_disposition(true),
+            WindowCloseDisposition::ExitApp
+        );
     }
 }

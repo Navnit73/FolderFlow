@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-pub use ff_macos_events::{start_workspace_observers, WorkspaceObserverGuard, WorkspaceSystemEvent};
+pub use ff_macos_events::{
+    start_workspace_observers, WorkspaceObserverGuard, WorkspaceSystemEvent,
+};
 
 use crate::engine::monitor::{MonitorService, RuntimeState};
 use crate::engine::paths::nfc;
@@ -106,7 +108,9 @@ mod tests {
     use crate::categories::CategoryService;
     use crate::database::{self, repo_files};
     use crate::engine::classifier::Classifier;
-    use crate::engine::monitor::{MonitorDeps, MonitorObserver, MonitorTiming, RawEvent, WatcherFactory};
+    use crate::engine::monitor::{
+        MonitorDeps, MonitorObserver, MonitorTiming, RawEvent, WatcherFactory,
+    };
     use crate::engine::operations::Ledger;
     use crate::engine::organizer::Organizer;
     use crate::engine::paths::{PathAuthority, RootPolicy};
@@ -160,7 +164,9 @@ mod tests {
         }
     }
 
-    async fn setup_system_harness(root: &Path) -> (
+    async fn setup_system_harness(
+        root: &Path,
+    ) -> (
         crate::database::Db,
         FolderService,
         Arc<MonitorService>,
@@ -250,7 +256,13 @@ mod tests {
         let missed = src.join("missed_during_sleep.pdf");
         test_support::write_file(&missed, b"%PDF-1.4\nsleep wake");
 
-        handle_workspace_event(WorkspaceSystemEvent::DidWake, &folders, &monitor, &scheduler).await;
+        handle_workspace_event(
+            WorkspaceSystemEvent::DidWake,
+            &folders,
+            &monitor,
+            &scheduler,
+        )
+        .await;
 
         // Diff reconcile + 1-check fast stability picks up the file created during sleep.
         let src_str = src.to_string_lossy().into_owned();
@@ -259,7 +271,10 @@ mod tests {
             let facts = repo_files::list_facts_for_folder(&db, &folder.id, &src_str, "Inbox")
                 .await
                 .expect("list facts");
-            if facts.iter().any(|p| p.path.ends_with("missed_during_sleep.pdf")) {
+            if facts
+                .iter()
+                .any(|p| p.path.ends_with("missed_during_sleep.pdf"))
+            {
                 tracked = true;
                 break;
             }
@@ -270,7 +285,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn r_sys_02_volume_unmount_marks_external_folder_unavailable_and_mount_resumes_and_reconciles() {
+    async fn r_sys_02_volume_unmount_marks_external_folder_unavailable_and_mount_resumes_and_reconciles(
+    ) {
         let dir = tempfile::tempdir().expect("tempdir");
         let (db, folders, monitor, scheduler, pipeline, home) =
             setup_system_harness(dir.path()).await;
@@ -381,5 +397,115 @@ mod tests {
         });
         drop(guard);
         assert!(!called.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn edge_07_volume_mount_and_unmount_isolate_sibling_prefix_and_disabled_folders() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (_db, folders, monitor, scheduler, _pipeline, home) =
+            setup_system_harness(dir.path()).await;
+
+        let vol_a = home.join("Backup");
+        let vol_b = home.join("Backup 2");
+        let folder_a_path = vol_a.join("Inbox");
+        let folder_disabled_path = vol_a.join("Archived");
+        let folder_b_path = vol_b.join("Inbox");
+        let folder_local_path = home.join("Desktop");
+
+        for p in [
+            &folder_a_path,
+            &folder_disabled_path,
+            &folder_b_path,
+            &folder_local_path,
+        ] {
+            std::fs::create_dir_all(p).expect("mkdir");
+        }
+
+        let folder_a = folders.add(&folder_a_path, false).await.expect("add a");
+        let folder_disabled = folders
+            .add(&folder_disabled_path, false)
+            .await
+            .expect("add disabled");
+        folders
+            .update(
+                &folder_disabled.id,
+                crate::folders::FolderPatch {
+                    name: None,
+                    enabled: Some(false),
+                    recursive: None,
+                    settings: None,
+                },
+            )
+            .await
+            .expect("disable folder");
+        let folder_b = folders.add(&folder_b_path, false).await.expect("add b");
+        let folder_local = folders
+            .add(&folder_local_path, false)
+            .await
+            .expect("add local");
+
+        for active in [&folder_a, &folder_b, &folder_local] {
+            monitor.start(active.clone()).await;
+            wait_for_folder_state(&monitor, &active.id, RuntimeState::Watching).await;
+        }
+
+        test_support::remove_dir_all(&vol_a);
+        handle_workspace_event(
+            WorkspaceSystemEvent::VolumeUnmounted {
+                mount_point: vol_a.clone(),
+            },
+            &folders,
+            &monitor,
+            &scheduler,
+        )
+        .await;
+
+        wait_for_folder_state(&monitor, &folder_a.id, RuntimeState::Unavailable).await;
+        let st_after_unmount = monitor.status().await;
+        assert_eq!(
+            st_after_unmount
+                .folders
+                .iter()
+                .find(|r| r.folder_id == folder_b.id)
+                .map(|r| r.state),
+            Some(RuntimeState::Watching),
+            "sibling mount Backup 2 must not match Backup prefix"
+        );
+        assert_eq!(
+            st_after_unmount
+                .folders
+                .iter()
+                .find(|r| r.folder_id == folder_local.id)
+                .map(|r| r.state),
+            Some(RuntimeState::Watching),
+        );
+        assert!(
+            !st_after_unmount
+                .folders
+                .iter()
+                .any(|r| r.folder_id == folder_disabled.id),
+            "disabled folder must remain inactive across unmount"
+        );
+
+        std::fs::create_dir_all(&folder_a_path).expect("remount a");
+        std::fs::create_dir_all(&folder_disabled_path).expect("remount disabled");
+        handle_workspace_event(
+            WorkspaceSystemEvent::VolumeMounted { mount_point: vol_a },
+            &folders,
+            &monitor,
+            &scheduler,
+        )
+        .await;
+
+        wait_for_folder_state(&monitor, &folder_a.id, RuntimeState::Watching).await;
+        let st_after_mount = monitor.status().await;
+        assert!(
+            !st_after_mount
+                .folders
+                .iter()
+                .any(|r| r.folder_id == folder_disabled.id),
+            "disabled folder must never be auto-resumed on remount"
+        );
+        monitor.shutdown().await;
     }
 }

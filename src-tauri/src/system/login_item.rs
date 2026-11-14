@@ -51,8 +51,7 @@ impl SmAppServiceBackend {
     fn map_error(err: ServiceManagementError) -> AppError {
         let msg = match err {
             ServiceManagementError::LaunchDeniedByUser => {
-                "Launch at login was denied in System Settings → General → Login Items."
-                    .to_owned()
+                "Launch at login was denied in System Settings → General → Login Items.".to_owned()
             }
             ServiceManagementError::InvalidSignature => {
                 "Launch at login requires a signed FolderFlow.app bundle.".to_owned()
@@ -178,7 +177,10 @@ mod tests {
         let backend = Arc::new(MockLoginItemBackend::default());
         let svc = LoginItemService::new(backend.clone());
 
-        assert_eq!(svc.status().expect("not reg"), LoginItemStatus::NotRegistered);
+        assert_eq!(
+            svc.status().expect("not reg"),
+            LoginItemStatus::NotRegistered
+        );
 
         assert_eq!(
             svc.set_enabled(true).expect("enable"),
@@ -198,7 +200,8 @@ mod tests {
         let st = real.status().expect("unbundled status");
         assert_eq!(st, LoginItemStatus::NotFound);
         assert_eq!(
-            real.set_enabled(false).expect("unbundled disable idempotent"),
+            real.set_enabled(false)
+                .expect("unbundled disable idempotent"),
             LoginItemStatus::NotFound
         );
     }

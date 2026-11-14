@@ -1,0 +1,47 @@
+# cargo-deny configuration for FolderFlow (P8-T05).
+# Enforces dependency advisories, license compliance, ban list, and source restrictions.
+
+[graph]
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+]
+
+[advisories]
+version = 2
+ignore = [
+  # libsqlite3-sys < 0.39 (SQLite < 3.54): uninitialised memory when opening an
+  # attacker-crafted db + -wal pair (`ADR-008`, `BUG-002`). FolderFlow only opens
+  # its own DB in app data and never opens foreign SQLite files.
+  { id = "RUSTSEC-2026-0459", reason = "ADR-008: FolderFlow only opens its own DB in private app-data dir; blocked on sqlx allowing libsqlite3-sys >= 0.39" },
+  # Transitive unmaintained proc-macro crate `paste 1.0.15` pulled by `tauri`/`specta`/`tauri-specta`:
+  # Upstream `cargo audit` informational warning only; no safe upgrade exists (`Solution: No safe upgrade is available!`).
+  { id = "RUSTSEC-2024-0436", reason = "Transitive unmaintained proc-macro crate paste via tauri/specta/tauri-specta; no upstream upgrade available" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# Workspace crates have `publish = false` (commercial/desktop distribution, not published to crates.io).
+private = { ignore = true }
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MPL-2.0",
+  "Zlib",
+  "Unicode-3.0",
+  "CC0-1.0",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

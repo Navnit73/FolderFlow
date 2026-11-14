@@ -1048,4 +1048,227 @@ mod tests {
             "expected destination_loop warning when NOT(InsideSubdirectory) is inside an ANY branch, got: {issues:?}"
         );
     }
+
+    #[test]
+    fn p8_validate_comprehensive_condition_and_action_branches() {
+        use crate::rules::models::{DatePlacement, LocationOp};
+
+        let mut draft = valid_draft();
+        draft.conditions = ConditionNode::All {
+            children: vec![
+                ConditionNode::Leaf {
+                    condition: Condition::Text {
+                        field: TextFieldKind::Name,
+                        op: TextOp::MatchesRegex,
+                        value: "[unclosed".into(),
+                        case_sensitive: false,
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Text {
+                        field: TextFieldKind::Name,
+                        op: TextOp::MatchesRegex,
+                        value: "a".repeat(MAX_REGEX_PATTERN_LEN + 1),
+                        case_sensitive: true,
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Category {
+                        category_id: "   ".into(),
+                        negate: false,
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Size {
+                        op: SizeOp::Between,
+                        value: 500,
+                        max_value: Some(100),
+                        unit: SizeUnit::Bytes,
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Date {
+                        field: DateField::Created,
+                        op: DateConditionOp::Before {
+                            date: "not-a-date".into(),
+                        },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Date {
+                        field: DateField::Modified,
+                        op: DateConditionOp::WithinRange {
+                            start: "2026-05-10".into(),
+                            end: "2026-05-01".into(),
+                        },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Date {
+                        field: DateField::Added,
+                        op: DateConditionOp::OlderThanDays { days: 0 },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Location {
+                        op: LocationOp::SourceFolderEquals { folder: " ".into() },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Location {
+                        op: LocationOp::SourceFolderContains { text: "".into() },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Location {
+                        op: LocationOp::InsideDirectory {
+                            path: "relative/dir".into(),
+                        },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Location {
+                        op: LocationOp::InsideDirectory {
+                            path: "/Users/alice/../bob".into(),
+                        },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Location {
+                        op: LocationOp::InsideSubdirectory {
+                            subpath: Some("../escape".into()),
+                        },
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::ContentHash {
+                        hash: "xyz!".into(),
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::FilenameGlob {
+                        pattern: "bad/glob".into(),
+                        case_sensitive: false,
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::FilenameGlob {
+                        pattern: "[bad".into(),
+                        case_sensitive: false,
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::ExtensionGroup {
+                        extensions: vec![".".into()],
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Hidden { is_hidden: false },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::EmptyFile { is_empty: false },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::DuplicateStatus {
+                        is_duplicate: false,
+                    },
+                },
+                ConditionNode::Leaf {
+                    condition: Condition::Date {
+                        field: DateField::Modified,
+                        op: DateConditionOp::Today,
+                    },
+                },
+            ],
+        };
+
+        draft.actions = vec![
+            Action::Move {
+                destination: "   ".into(),
+            },
+            Action::Copy {
+                destination: "/".into(),
+            },
+            Action::CreateDestinationFolder {
+                path: "/Users/other/Outside".into(),
+            },
+            Action::MoveIntoDynamicFolder {
+                root: Some("relative".into()),
+                subpath_template: "{year}".into(),
+            },
+            Action::Rename {
+                template: "{unknown_token}".into(),
+            },
+            Action::AddPrefix {
+                prefix: "bad/prefix".into(),
+            },
+            Action::AddSuffix {
+                suffix: "{unclosed".into(),
+            },
+            Action::RemoveText {
+                text: "".into(),
+                case_sensitive: false,
+            },
+            Action::ReplaceText {
+                find: "".into(),
+                replace: "../evil".into(),
+                case_sensitive: false,
+            },
+            Action::AddDateToFilename {
+                placement: DatePlacement::Prefix,
+                format: "{bad_var}".into(),
+            },
+            Action::ChangeExtension {
+                new_extension: "bad/ext".into(),
+                confirm_unsafe: true,
+            },
+            Action::Notify {
+                message: "  ".into(),
+            },
+            Action::MarkForReview { reason: "".into() },
+            Action::ApplyAnotherRule { rule_id: "".into() },
+            Action::StopProcessing,
+        ];
+
+        let ctx = ValidationContext {
+            approved_roots: vec![PathBuf::from("/Users/alice/Downloads")],
+            ..Default::default()
+        };
+        let issues = validate_rule_draft(&draft, &ctx);
+        let codes: std::collections::HashSet<&str> =
+            issues.iter().map(|i| i.code.as_str()).collect();
+        for expected in [
+            "invalid_regex",
+            "regex_too_long",
+            "empty_category",
+            "invalid_size_range",
+            "invalid_date",
+            "invalid_date_range",
+            "invalid_days",
+            "empty_folder",
+            "empty_value",
+            "invalid_directory",
+            "invalid_subpath",
+            "invalid_hash",
+            "invalid_glob",
+            "invalid_extensions",
+            "empty_destination",
+            "invalid_destination",
+            "outside_approved_roots",
+            "invalid_template",
+            "invalid_affix",
+            "empty_text",
+            "empty_find",
+            "invalid_replacement",
+            "invalid_extension",
+            "empty_message",
+            "empty_reason",
+            "empty_rule_id",
+        ] {
+            assert!(
+                codes.contains(expected),
+                "expected issue code `{expected}`, got: {codes:?}"
+            );
+        }
+    }
 }

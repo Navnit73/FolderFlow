@@ -1408,4 +1408,160 @@ mod tests {
             "BUG-022: disabling global ignore_hidden_files must include hidden files"
         );
     }
+
+    #[tokio::test]
+    async fn p8_scheduler_validation_setters_delete_and_quiet_hours() {
+        let (_d, root) = tempdir();
+        let clock = Arc::new(FixedClock::utc(utc_ms(2026, 6, 15, 22, 30)));
+        let (svc, db, folder_id, rule) = setup_scheduler_env(&root, clock.clone()).await;
+
+        // 1. Validation error paths
+        assert!(parse_hhmm("25:99").is_err());
+        assert!(svc
+            .upsert(ScheduleInput {
+                id: None,
+                rule_id: None,
+                folder_id: None,
+                schedule_type: ScheduleType::Manual,
+                config: ScheduleConfig::default(),
+                enabled: true,
+            })
+            .await
+            .is_err());
+        assert!(svc
+            .upsert(ScheduleInput {
+                id: None,
+                rule_id: None,
+                folder_id: Some(folder_id.clone()),
+                schedule_type: ScheduleType::Interval,
+                config: ScheduleConfig::default(),
+                enabled: true,
+            })
+            .await
+            .is_err());
+        assert!(svc
+            .upsert(ScheduleInput {
+                id: None,
+                rule_id: None,
+                folder_id: Some(folder_id.clone()),
+                schedule_type: ScheduleType::Interval,
+                config: ScheduleConfig {
+                    interval_secs: Some(5),
+                    ..Default::default()
+                },
+                enabled: true,
+            })
+            .await
+            .is_err());
+        assert!(svc
+            .upsert(ScheduleInput {
+                id: None,
+                rule_id: None,
+                folder_id: Some(folder_id.clone()),
+                schedule_type: ScheduleType::Daily,
+                config: ScheduleConfig::default(),
+                enabled: true,
+            })
+            .await
+            .is_err());
+        assert!(svc
+            .upsert(ScheduleInput {
+                id: None,
+                rule_id: None,
+                folder_id: Some(folder_id.clone()),
+                schedule_type: ScheduleType::Weekly,
+                config: ScheduleConfig {
+                    time: Some("09:00".into()),
+                    weekdays: vec![],
+                    ..Default::default()
+                },
+                enabled: true,
+            })
+            .await
+            .is_err());
+
+        // 2. Disabled upsert -> set_enabled(true) -> upsert update existing -> delete -> NotFound
+        let disabled = svc
+            .upsert(ScheduleInput {
+                id: Some("sched-p8".into()),
+                rule_id: Some(rule.id.clone()),
+                folder_id: Some(folder_id.clone()),
+                schedule_type: ScheduleType::Interval,
+                config: ScheduleConfig {
+                    interval_secs: Some(120),
+                    quiet_hours: Some(QuietHours {
+                        start: "22:00".into(),
+                        end: "06:00".into(),
+                    }),
+                    ..Default::default()
+                },
+                enabled: false,
+            })
+            .await
+            .expect("insert disabled");
+        assert!(disabled.next_run_at.is_none());
+        assert_eq!(
+            evaluate_due_schedule(&disabled, clock.now_ms(), clock.as_ref()).expect("eval"),
+            DueDecision::NotDue
+        );
+
+        let enabled = svc.set_enabled(&disabled.id, true).await.expect("enable");
+        assert!(enabled.next_run_at.is_some());
+
+        let due_in_quiet = Schedule {
+            next_run_at: Some(utc_ms(2026, 6, 15, 22, 15)),
+            ..enabled.clone()
+        };
+        assert!(matches!(
+            evaluate_due_schedule(&due_in_quiet, utc_ms(2026, 6, 15, 22, 30), clock.as_ref())
+                .expect("defer"),
+            DueDecision::DeferredQuietHours { .. }
+        ));
+
+        let future_sched = Schedule {
+            next_run_at: Some(utc_ms(2026, 6, 16, 10, 0)),
+            ..enabled.clone()
+        };
+        assert_eq!(
+            evaluate_due_schedule(&future_sched, utc_ms(2026, 6, 15, 22, 30), clock.as_ref())
+                .expect("future"),
+            DueDecision::NotDue
+        );
+
+        let on_time = Schedule {
+            config: ScheduleConfig {
+                interval_secs: Some(120),
+                quiet_hours: None,
+                ..Default::default()
+            },
+            next_run_at: Some(utc_ms(2026, 6, 15, 22, 29)),
+            ..enabled.clone()
+        };
+        assert!(matches!(
+            evaluate_due_schedule(&on_time, utc_ms(2026, 6, 15, 22, 30), clock.as_ref())
+                .expect("run now"),
+            DueDecision::RunNow {
+                is_catch_up: false,
+                ..
+            }
+        ));
+
+        // 3. Setters + delete + NotFound errors
+        let _ = db;
+        svc.set_authority(PathAuthority::default());
+        svc.set_classifier(Arc::new(crate::engine::classifier::Classifier::new(
+            crate::categories::builtin_categories(),
+        )));
+        svc.set_conflict_policy(ConflictPolicy::Skip);
+        svc.set_notifier(Arc::new(crate::notifications::NotificationService::new(
+            clock.clone(),
+            Arc::new(crate::notifications::NoopNotificationSink),
+            crate::notifications::NotificationConfig::default(),
+        )));
+
+        svc.delete(&disabled.id).await.expect("delete");
+        assert!(svc.delete(&disabled.id).await.is_err());
+        assert!(svc.set_enabled(&disabled.id, true).await.is_err());
+        assert!(svc.run_now(&disabled.id).await.is_err());
+    }
 }

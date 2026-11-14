@@ -18,3 +18,4 @@ export const loginItemService = {
   status: (): Promise<LoginItemStatus> => unwrap(commands.loginItemStatus()),
   openSettings: (): Promise<boolean> => unwrap(commands.openLoginItemsSettings()),
 };
+

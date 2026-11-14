@@ -20,6 +20,7 @@ Append-only. Status: Proposed → Accepted → Superseded (by ADR-x).
 | 014 | First scan and scope changes are a baseline, not "new files" | Accepted | 2026-11-13 |
 | 015 | Pure rule engine (`regex`, `glob`, `chrono`) over `FileFacts` and injectable `Clock` | Accepted | 2026-11-14 |
 | 016 | `blake3` streaming content verification and `safe_fs` capability tokens | Accepted | 2026-11-14 |
+| 017 | Native macOS Keychain, Launch at Login, UNUserNotificationCenter, NSWorkspace bridge, and Ed25519 licensing | Accepted | 2026-11-14 |
 
 ---
 
@@ -81,3 +82,17 @@ The monitor reports only files that are new or changed since the folder's last c
 
 ### ADR-016 — `blake3` streaming content verification and `safe_fs` capability tokens
 **Decision:** `engine::safe_fs` is the sole mutating filesystem module (enforced by `clippy.toml` `disallowed_methods`). It uses `blake3` 1.8 for 64 KiB streaming content hashing during `copy_excl` and post-copy verification (`verify_copied`). Unlinking a cross-volume source (`remove_verified_source`) requires a capability token (`VerifiedSourceToken`) that can only be constructed after `verify_copied` confirms the destination's size and BLAKE3 digest match the streamed copy and the source's `(dev, ino, size, mtime_ns)` is unchanged. Trash operations use `objc2_foundation::NSFileManager::trashItemAtURL_resultingItemURL_error` in production and an isolated temp `.Trash` directory in tests so automated tests never touch the user's `~/.Trash`.
+
+### ADR-017 — Native macOS Keychain, Launch at Login, UNUserNotificationCenter, NSWorkspace bridge, and Ed25519 licensing
+**Decision:**
+- Keychain credentials use `security-framework` (`MacOsKeychain` in `security/keychain.rs`) behind `KeychainBackend` so tests run against `InMemoryKeychain` without touching the developer's login keychain.
+- Launch at login uses Apple's modern `SMAppService` API via `smappservice-rs` (`system/login_item.rs`), guarded by an `NSBundle::mainBundle().bundleIdentifier()` check so unbundled `cargo test` binaries never fail trying to access main-app login item APIs.
+- Native notifications use `objc2-user-notifications` + `block2` (`notifications/native.rs`) wired into `CompositeNotificationSink` with `UNUserNotificationCenter`, honoring system settings and app batching/cooldown rules.
+- Sleep/wake and external volume mount/unmount observers (`NSWorkspace` notification center with `block2` callbacks producing `!Send` AppKit tokens kept on the main thread) live inside a dedicated leaf workspace crate (`src-tauri/crates/ff-macos-events`) so the main crate retains `#![deny(unsafe_code)]` while keeping all native lifecycle bridges clean and isolated.
+- Offline licensing uses `ed25519-dalek` 3 + `base64` 0.22 (`FF1.*` tokens and `.fflicense` JSON documents, verified locally with zero network calls); optional online licensing goes strictly through `reqwest` (rustls only, no default TLS) inside `security/license.rs` (`HttpJsonLicenseProvider`), with `UnconfiguredOnlineProvider` active until product online licensing vendor `Q1` is selected.
+
+### ADR-018 — Phase 8 QA harness: Criterion benchmarks, Playwright E2E + axe-core WCAG matrix, and `cargo-deny` policy
+**Decision:**
+- Benchmarks (`P8-T04`, `NFR-022`/`023`) use `criterion` `0.8.2` (dev-dependency only, `src-tauri/benches/folderflow_benches.rs`) alongside a dedicated FSEvents idle probe (`src-tauri/examples/bench_idle_monitor.rs`) timed with macOS `/usr/bin/time -l`, keeping heavy multi-second loops outside `cargo test`.
+- End-to-end UI workflows and accessibility audits (`P8-T03`, `P8-T06`) run via Playwright (`tests/e2e/app.spec.ts`) and `@axe-core/playwright` against the built `vite preview` bundle backed by a typed stateful `window.__TAURI_INTERNALS__` mock (`tests/e2e/helpers/tauriMock.ts`), plus an automated Light/Dark token + overlay contrast matrix in `scripts/check-tokens.test.ts` (`UI-A11Y-01`).
+- Supply-chain policy (`P8-T05`) is enforced via `src-tauri/deny.toml` (`cargo deny check`) banning wildcard path deps and unknown registries/git sources, allowing curated OSS licenses for `aarch64-apple-darwin` / `x86_64-apple-darwin`, and tracking upstream `RUSTSEC-2026-0459` (`ADR-008`, `sqlx 0.9.0` re-verified 2026-11-14) and `RUSTSEC-2024-0436` (transitive unmaintained `paste 1.0.15`).

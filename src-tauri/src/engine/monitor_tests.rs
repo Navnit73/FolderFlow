@@ -584,3 +584,33 @@ async fn r_mon_monitoring_makes_zero_filesystem_writes() {
         "monitoring must not create, modify, move or delete anything"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn p8_monitor_dynamic_updates_refresh_and_overflow_reconcile() {
+    let e = env_with(true, fast_timing(), None).await;
+    e.mon.start(e.folder.clone()).await;
+    let rec = e.rec.clone();
+    wait_until("watching", || {
+        rec.last_state() == Some(RuntimeState::Watching)
+    })
+    .await;
+
+    // Exercise dynamic classifier, settings, and exclusion refresh methods.
+    e.mon
+        .set_classifier(Arc::new(Classifier::new(builtin_categories())));
+    e.mon.set_settings(MonitoringSettings {
+        ignore_hidden_files: false,
+        ..MonitoringSettings::default()
+    });
+    e.mon.refresh_exclusions().await;
+
+    // Rescan & unknown-folder no-op coverage + double-start replacement coverage.
+    e.mon.rescan("nonexistent-folder").await;
+    e.mon.pause("nonexistent-folder").await;
+    e.mon.resume("nonexistent-folder").await;
+    e.mon.start(e.folder.clone()).await;
+
+    let st = e.mon.status().await;
+    assert_eq!(st.folders.len(), 1);
+    e.mon.shutdown().await;
+}

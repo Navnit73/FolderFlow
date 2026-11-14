@@ -44,19 +44,26 @@ When a channel is full, upstream drops to "mark folder dirty → reconcile later
 ```text
 folderflow/
 ├── CLAUDE.md                     working agreement for AI/dev sessions
-├── docs/                         source of truth (PRD, tracker, audits…)
+├── docs/                         source of truth (PRD, tracker, benchmarks, audits…)
+├── tests/e2e/                    Playwright E2E + axe-core accessibility suite + stateful Tauri IPC mock [P8]
+├── playwright.config.ts
 ├── src/                          React frontend
 │   ├── main.tsx, App.tsx
 │   ├── styles/theme.css          ★ THE ONLY place design values live
 │   ├── components/ui/            shadcn primitives (token-only)
 │   ├── components/               app components
 │   ├── layouts/AppLayout.tsx
-│   ├── pages/<screen>/
+│   ├── pages/<screen>/           Overview, Folders, Rules, Preview, Activity, Duplicates, Scheduler, Categories, Settings, License, Onboarding
 │   ├── stores/                   Zustand (UI state + cached server state)
 │   ├── services/                 thin wrappers over generated bindings
 │   ├── bindings.ts               ★ generated from Rust (do not edit)
-│   ├── hooks/, types/
+│   └── hooks/, types/            useGlobalShortcuts (FR-220), useMonitoringEvents, ...
 ├── src-tauri/
+│   ├── deny.toml                 cargo-deny advisories, bans, licenses & sources policy [P8]
+│   ├── benches/                  Criterion benchmark suite (1k–100k files) [P8]
+│   ├── examples/                 bench_idle_monitor idle FSEvents CPU/RSS probe [P8]
+│   ├── tests/failure_suite.rs    spec §24.3 failure suite R-FAIL-01..12 [P8]
+│   ├── crates/ff-macos-events/   NSWorkspace sleep/wake & mount/unmount observer bridge [P7]
 │   ├── src/
 │   │   ├── main.rs               calls lib::run()
 │   │   ├── lib.rs                builder, state, plugin + command registration only
@@ -83,14 +90,13 @@ folderflow/
 │   │   ├── categories/        built-in table + custom category service                        [P2]
 │   │   ├── folders/           monitored-folder registry, probe_access, overlap rule          [P2]
 │   │   ├── onboarding/        6-step onboarding state + non-mutating scan preview             [P5]
-│   │   ├── system/            macOS integration via objc2 (System Settings link)             [P2]
-│   │   ├── events.rs          typed events + TauriObserver + CompositeObserver                 [P2/P5]
+│   │   ├── system/            mod.rs tray.rs login_item.rs coordinator.rs (macOS integration via objc2 / smappservice-rs / tray) [P2/P7]
+│   │   ├── events.rs          typed events + TauriObserver + CompositeObserver                 [P2/P5/P7]
 │   │   ├── rules/ models.rs conditions.rs evaluator.rs templates.rs validate.rs presets.rs smart.rs service.rs [P3/P6]
 │   │   ├── duplicates/ hasher.rs cache.rs finder.rs actions.rs                            [P6]
 │   │   ├── database/ pool.rs repo_*.rs                                                   [P1–P6]
-│   │   ├── notifications/ mod.rs service.rs                                              [P6]
-│   │   ├── security/ capabilities.rs license.rs keychain.rs
-│   │   ├── system/ tray.rs login_item.rs power.rs volumes.rs
+│   │   ├── notifications/ mod.rs service.rs native.rs (`UNUserNotificationCenter`)       [P6/P7]
+│   │   ├── security/ mod.rs license.rs keychain.rs                                       [P7]
 │   │   ├── config_io/ export.rs import.rs schema.rs                                      [P6]
 │   │   └── utils/ time.rs clock.rs                                                               [P3]
 │   ├── migrations/0001_init.sql …
@@ -151,7 +157,8 @@ All commands are `async`, return `Result<T, UiError>`, and are exported to TS vi
 |---|---|---|
 | app | `app_info` | → `AppInfo` (version, data/log dirs, schema version) |
 | settings | `settings_get` | → `Settings` |
-| | `settings_update` | `Settings` (full, validated) → `Settings` |
+| | `settings_update` | `Settings` (full, validated) → `Settings` (syncs monitor, login item & tray) |
+| | `login_item_status` / `open_login_items_settings` | → `LoginItemStatus` (`SMAppService`) / opens System Settings Login Items [P7] |
 | folders | `folders_list` | → `Vec<MonitoredFolder>` |
 | | `folders_add_with_picker` | `recursive` → `Option<MonitoredFolder>` (native picker runs in Rust; `None` = cancelled) |
 | | `folders_add_known` | `kind: Downloads\|Desktop\|Documents\|Pictures\|Movies\|Music, recursive` → `MonitoredFolder` |
@@ -187,8 +194,8 @@ All commands are `async`, return `Result<T, UiError>`, and are exported to TS vi
 | dashboard | `dashboard_stats` / `db_maintenance` | SQLite stats aggregation & `ANALYZE`/`VACUUM` maintenance [P6] |
 | exclusions | `exclusions_list/create/delete` | global & per-folder `path`/`glob`/`extension` exclusion rules [P6] |
 | config | `config_export/pick_import_file/import_preview/import_apply` | versioned JSON export, dry-run diff preview, merge/replace import [P6] |
-| notifications | `notifications_list/mark_read/clear/test` | batched/throttled notification center history & test dispatch [P6] |
-| license | `license_status/activate/activate_offline/deactivate` | |
+| notifications | `notifications_list/mark_read/clear/test` | batched/throttled notification center history & native macOS test dispatch [P6/P7] |
+| license | `license_status/activate/activate_offline/pick_and_activate_offline_file/deactivate` | Keychain-backed license status, offline Ed25519 / `.fflicense` verification, online provider adapter [P7] |
 | onboarding | `onboarding_state` / `onboarding_set_step` / `onboarding_scan_preview` / `onboarding_complete` / `onboarding_reset` | persistent wizard state + non-mutating starter scan |
 
 The frontend never receives a raw "move this path to that path" command. It only references IDs (folder, rule, plan, plan item, operation) that Rust resolves.
@@ -201,6 +208,7 @@ The frontend never receives a raw "move this path to that path" command. It only
 | `folder-activity-event` ✅ | `{folderId, kind: stable\|removed}` — no paths; UI refetches (debounced) |
 | `dup-progress-event` ✅ | `DupProgressEvent` — progress updates during duplicate scanning |
 | `app-notification-event` ✅ | `AppNotificationEvent` — batched/throttled notification delivery |
+| `tray-navigate-event` ✅ | `TrayNavigateEvent { path }` — tray menu deep-link navigation [P7] |
 | `scan://progress` | `{folder_id, files, bytes, done}` (planned) |
 | `plan://progress` | `{plan_id, evaluated, total}` |
 | `batch://progress` | `{batch_id, done, failed, total}` |
@@ -223,8 +231,8 @@ The frontend never receives a raw "move this path to that path" command. It only
 | `/duplicates` | Duplicates ✅ | duplicate scan, wasted-space summary, keeper/review/trash/ignore actions, CSV/JSON export, review folder config |
 | `/scheduler` | Scheduler ✅ | interval/daily/weekly/launch/manual schedules, quiet hours, catch-up policy, run now |
 | `/categories` | Categories ✅ | built-in & custom categories, extension/color editor, reorder, default destination picker |
-| `/settings/:section` | Settings ✅ | general, appearance, monitoring, organization, performance, notifications, privacy (exclusions), backup, about |
-| `/license` | License | planned (Phase 8/9) |
+| `/settings/:section` | Settings ✅ | general (incl. login item, tray/minimized toggles), appearance, monitoring, organization, performance, notifications, privacy (exclusions), backup, about |
+| `/license` | License ✅ | offline Ed25519 `FF1.*` & `.fflicense` verification, macOS Keychain storage, deactivate confirm (`Q1` online provider via `UnconfiguredOnlineProvider`) |
 
 ### Shared components (all styled by theme tokens only)
 
@@ -232,7 +240,7 @@ The frontend never receives a raw "move this path to that path" command. It only
 
 ### State
 
-- Zustand stores: `useUi` (theme, density, sidebar), `useMonitoring`, `useDashboard`, `useFolders`, `useRules`, `usePreview`, `useActivity`, `useDuplicates`, `useCategories`, `useSchedules`, `useOnboarding`, `useSettings`. Stores call `services/*` which call generated bindings. Event listeners update stores.
+- Zustand stores: `useUi` (theme, density, sidebar), `useMonitoring`, `useDashboard`, `useFolders`, `useRules`, `usePreview`, `useActivity`, `useDuplicates`, `useCategories`, `useSchedules`, `useOnboarding`, `useSettings`, `useLicense`. Stores call `services/*` which call generated bindings. Event listeners update stores.
 - No business logic in stores — only caching and UI state.
 - Stores that save optimistically must never roll back to a locally remembered state on failure; they re-read from Rust (BUG-004).
 

@@ -115,6 +115,7 @@ export function NotificationsSection() {
         )}
         <SettingRow
           label="Enable notifications"
+          htmlFor="notif-master"
           description="Master toggle for all desktop summary and alert notifications."
         >
           <Switch
@@ -177,7 +178,7 @@ export function NotificationsSection() {
         <h3 className="text-sm font-semibold text-fg">Per-event preferences</h3>
         <div className="mt-1">
           {PER_TYPE_LABELS.map((item) => (
-            <SettingRow key={item.key} label={item.label} description={item.desc}>
+            <SettingRow key={item.key} label={item.label} htmlFor={`notif-type-${item.key}`} description={item.desc}>
               <Switch
                 id={`notif-type-${item.key}`}
                 checked={n.perType[item.key]}
