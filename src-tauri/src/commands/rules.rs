@@ -179,5 +179,6 @@ pub async fn rules_pick_destination_folder(
         return Ok(None);
     };
     let approved = state.rules.add_destination_root(&path).await?;
+    state.refresh_authority().await?;
     Ok(Some(approved))
 }

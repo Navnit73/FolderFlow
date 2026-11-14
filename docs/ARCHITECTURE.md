@@ -66,7 +66,7 @@ folderflow/
 │   │   ├── settings/             typed Settings model, validation, SettingsService
 │   │   ├── commands/             one file per screen domain; ≤ ~20 lines per handler
 │   │   ├── engine/
-│   │   │   ├── safe_fs/          ★ only mutating FS code (mod.rs, rename.rs, copy.rs, trash.rs)
+│   │   │   ├── safe_fs/          ★ only mutating FS code (mod.rs, rename.rs, copy.rs, trash.rs, fault.rs) [P4]
 │   │   │   ├── fs_view.rs        ReadOnlyFs trait + RealFs (stat, bounded header read; no follow, non-blocking)
 │   │   │   ├── paths.rs          PathAuthority, validate_new_root, NFC normalisation           [P2]
 │   │   │   ├── ignore.rs         always-ignored names, partial downloads, cache dirs, settings  [P2]
@@ -76,9 +76,10 @@ folderflow/
 │   │   │   ├── debounce.rs, stability.rs   pure state machines (caller supplies time)       [P2]
 │   │   │   ├── monitor.rs        MonitorService + one supervised task per folder (watcher, backoff, health) [P2]
 │   │   │   ├── planner.rs        ExecutionPlan (pure, read-only)
-│   │   │   ├── organizer.rs      plan executor
-│   │   │   ├── operations.rs     state machine + ledger
-│   │   │   ├── conflicts.rs, recovery.rs, undo.rs, scheduler.rs, pipeline.rs
+│   │   │   ├── organizer.rs      transactional move/copy/rename pipeline                       [P4]
+│   │   │   ├── operations.rs     state machine + write-ahead ledger (`LedgerToken`)            [P4]
+│   │   │   ├── conflicts.rs, recovery.rs, undo.rs, activity.rs                                 [P4]
+│   │   │   ├── scheduler.rs, pipeline.rs
 │   │   ├── categories/        built-in table + custom category service                        [P2]
 │   │   ├── folders/           monitored-folder registry, probe_access, overlap rule          [P2]
 │   │   ├── system/            macOS integration via objc2 (System Settings link)             [P2]
@@ -213,7 +214,7 @@ The frontend never receives a raw "move this path to that path" command. It only
 | `/rules` | Rules ✅ | priority-ordered list, starter preset menu, enable toggle, reorder, duplicate, delete |
 | `/rules/new`, `/rules/:id` | RuleBuilder ✅ | nested condition tree editor, actions list, live validation, template preview, dry-run folder test |
 | `/preview` | Preview | `?folder=`, `?rule=` |
-| `/activity` | Activity | |
+| `/activity` | Activity ✅ | paginated operation ledger, filters, undo last/selected/row/batch, conflict resolution (`Needs Review`), retry, CSV export, clear history, reveal in Finder |
 | `/duplicates` | Duplicates | |
 | `/scheduler` | Scheduler | |
 | `/categories` | Categories | |

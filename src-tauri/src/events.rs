@@ -1,6 +1,7 @@
 //! Typed Rust → UI events (docs/ARCHITECTURE.md §6 "Events").
 
 use std::path::Path;
+use std::sync::Arc;
 
 use serde::Serialize;
 use specta::Type;
@@ -8,6 +9,7 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 
 use crate::engine::monitor::{FolderRuntime, MonitorObserver};
+use crate::engine::pipeline::AutomationPipeline;
 use crate::engine::scanner::ScannedFile;
 
 /// A folder's runtime state changed (watching, paused, unavailable, …).
@@ -52,5 +54,28 @@ impl MonitorObserver for TauriObserver {
             kind: FileActivityKind::Removed,
         }
         .emit(&self.app);
+    }
+}
+
+/// Broadcasts monitor callbacks to both the UI event emitter and the automation pipeline.
+pub struct CompositeObserver {
+    pub tauri: TauriObserver,
+    pub pipeline: Arc<AutomationPipeline>,
+}
+
+impl MonitorObserver for CompositeObserver {
+    fn on_status(&self, status: &FolderRuntime) {
+        self.tauri.on_status(status);
+        self.pipeline.on_status(status);
+    }
+
+    fn on_stable(&self, folder_id: &str, file: &ScannedFile) {
+        self.tauri.on_stable(folder_id, file);
+        self.pipeline.on_stable(folder_id, file);
+    }
+
+    fn on_removed(&self, folder_id: &str, path: &Path) {
+        self.tauri.on_removed(folder_id, path);
+        self.pipeline.on_removed(folder_id, path);
     }
 }

@@ -12,6 +12,7 @@ pub mod error;
 pub mod events;
 pub mod folders;
 pub mod logging;
+pub mod onboarding;
 pub mod rules;
 pub mod security;
 pub mod settings;
@@ -61,6 +62,28 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::rules::template_preview,
             commands::rules::rules_test_folder,
             commands::rules::rules_pick_destination_folder,
+            commands::activity::activity_list,
+            commands::activity::activity_undo,
+            commands::activity::activity_retry,
+            commands::activity::activity_export_csv,
+            commands::activity::activity_clear,
+            commands::activity::reveal_in_finder,
+            commands::activity::review_list,
+            commands::activity::review_resolve,
+            commands::preview::plan_create,
+            commands::preview::plan_items,
+            commands::preview::plan_execute,
+            commands::preview::plan_discard,
+            commands::schedules::schedules_list,
+            commands::schedules::schedules_upsert,
+            commands::schedules::schedules_delete,
+            commands::schedules::schedules_set_enabled,
+            commands::schedules::schedules_run_now,
+            commands::onboarding::onboarding_state,
+            commands::onboarding::onboarding_set_step,
+            commands::onboarding::onboarding_scan_preview,
+            commands::onboarding::onboarding_complete,
+            commands::onboarding::onboarding_reset,
         ])
         .events(collect_events![
             events::FolderStatusEvent,

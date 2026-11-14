@@ -19,6 +19,7 @@ Append-only. Status: Proposed → Accepted → Superseded (by ADR-x).
 | 013 | Monitored folders may not overlap | Accepted | 2026-11-13 |
 | 014 | First scan and scope changes are a baseline, not "new files" | Accepted | 2026-11-13 |
 | 015 | Pure rule engine (`regex`, `glob`, `chrono`) over `FileFacts` and injectable `Clock` | Accepted | 2026-11-14 |
+| 016 | `blake3` streaming content verification and `safe_fs` capability tokens | Accepted | 2026-11-14 |
 
 ---
 
@@ -77,3 +78,6 @@ The monitor reports only files that are new or changed since the folder's last c
 
 ### ADR-015 — Pure rule engine (`regex`, `glob`, `chrono`) over `FileFacts` and injectable `Clock`
 **Decision:** The `rules` module performs zero filesystem or database I/O; it evaluates `ConditionNode` trees, renders path/naming templates, and runs rule chains purely over injected `FileFacts` and a `Clock` trait (`SystemClock` in production, `FixedClock` with configurable UTC offset and DST transitions in tests). Direct dependencies `regex 1` (linear-time NFA/DFA with explicit compile size limits for FR-048), `glob 0.3` (for FR-047), and `chrono 0.4` (for local calendar date calculations in FR-045/FR-070) are promoted from existing transitive dependencies in `Cargo.lock`.
+
+### ADR-016 — `blake3` streaming content verification and `safe_fs` capability tokens
+**Decision:** `engine::safe_fs` is the sole mutating filesystem module (enforced by `clippy.toml` `disallowed_methods`). It uses `blake3` 1.8 for 64 KiB streaming content hashing during `copy_excl` and post-copy verification (`verify_copied`). Unlinking a cross-volume source (`remove_verified_source`) requires a capability token (`VerifiedSourceToken`) that can only be constructed after `verify_copied` confirms the destination's size and BLAKE3 digest match the streamed copy and the source's `(dev, ino, size, mtime_ns)` is unchanged. Trash operations use `objc2_foundation::NSFileManager::trashItemAtURL_resultingItemURL_error` in production and an isolated temp `.Trash` directory in tests so automated tests never touch the user's `~/.Trash`.

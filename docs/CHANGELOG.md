@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: SemVer.
 
 ## [Unreleased]
 
+### Added — Phase 4 (Safe operations)
+- Activity screen (`/activity`): paginated write-ahead ledger view with search/status/type filters, one-click Undo Last / Undo Selected / per-row Undo / Undo Batch (with empty folder pruning), occupied-path Undo Conflict alert with "Restore with Auto-Rename", pending `Needs Review` conflict resolution queue (`Keep Both` / `Skip`), Retry Failed operation, formula-injection-safe CSV export, Clear History confirmation dialog, and Reveal in Finder (`NSWorkspace`).
+- Safe filesystem layer (`src-tauri/src/engine/safe_fs/`): the sole mutating FS module using `renamex_np(RENAME_EXCL)`, streaming 64 KiB `copy_excl` (`O_CREAT | O_EXCL` + BLAKE3 + `fsync`), `VerifiedSourceToken`-gated `remove_verified_source`, `NSFileManager` Trash integration (`SafeFs::production`) with isolated temp-Trash override (`SafeFs::with_trash_dir`), `statvfs` disk space pre-check, and deterministic fault-injection wrapper (`FaultyFs`).
+- Write-ahead operation ledger (`engine/operations.rs`, `database/repo_operations.rs`), transactional move/copy/rename pipeline (`engine/organizer.rs`), race-safe conflict resolver (`engine/conflicts.rs`), honest undo service (`engine/undo.rs`), startup crash recovery + orphan `.folderflow-*.partial` sweep (`engine/recovery.rs`), and corrupted SQLite database backup + recreation (`database/pool.rs`, `NFR-032`).
+
+### Fixed — Phase 4 audit
+- BUG-018 … BUG-021 (see docs/BUGS.md): persisting auto-renamed `destination_path` in `VERIFYING` before cross-volume `remove_verified_source`, deduplicating `op_ids` in `UndoTarget::Ops`, paginating `export_csv` beyond 500 rows, and allowing macOS root-level `/var`, `/tmp`, and `/etc` system links in `SafeFs::mkdir_p`.
+
 ### Added — Phase 3 (Rule engine)
 - Rules screen (`/rules`): priority-ordered list, enable/disable switches, priority reorder, duplicate, delete with confirmation, and starter rule templates menu (Organize PDFs, Organize Screenshots, Organize Images, Organize Videos, Organize Archives, Organize Invoices & Receipts, Clean Old Downloads — all created disabled by default).
 - Visual Rule Builder (`/rules/new`, `/rules/:id`): nested `ALL`/`ANY`/`NOT` condition groups (up to depth 5), 11 condition families (text/regex, extension group, category, decimal file size `1 KB = 1000 B`, local-timezone date operators, location, glob, hidden, empty, duplicate status, BLAKE3 hash), 16 safe action types (no shell/command execution), naming preset chips, native destination folder picker, live template preview, inline validation errors/warnings, and dry-run "Test rule on folder".

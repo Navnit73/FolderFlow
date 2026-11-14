@@ -56,6 +56,35 @@ pub fn tempdir() -> (tempfile::TempDir, PathBuf) {
     (dir, canon)
 }
 
+/// Captures a deterministic snapshot of every entry under `root` (`(rel_path, size, mtime_ns, bytes)`)
+/// so tests (`r_plan_01`, `r_onb_01`) can assert zero filesystem mutations occurred.
+pub fn snapshot_tree(root: &Path) -> Vec<(String, u64, i64, Vec<u8>)> {
+    use std::os::unix::fs::MetadataExt;
+    let mut out = Vec::new();
+    for entry in walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .sort_by_file_name()
+        .into_iter()
+        .flatten()
+    {
+        let p = entry.path();
+        let rel = p
+            .strip_prefix(root)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .into_owned();
+        if let Ok(md) = std::fs::symlink_metadata(p) {
+            let bytes = if md.is_file() {
+                std::fs::read(p).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            out.push((rel, md.len(), md.mtime_nsec(), bytes));
+        }
+    }
+    out
+}
+
 /// Guard: tests must never touch real user folders (TESTING_STRATEGY §4).
 pub fn assert_test_path(path: &Path) {
     let tmp = std::env::temp_dir().canonicalize().expect("temp dir");

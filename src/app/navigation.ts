@@ -25,10 +25,10 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "overview", label: "Overview", path: "/overview", icon: LayoutDashboard, available: false },
   { id: "folders", label: "Folders", path: "/folders", icon: FolderOpen, available: true },
   { id: "rules", label: "Rules", path: "/rules", icon: ListChecks, available: true },
-  { id: "preview", label: "Preview", path: "/preview", icon: Eye, available: false },
-  { id: "activity", label: "Activity", path: "/activity", icon: Activity, available: false },
+  { id: "preview", label: "Preview", path: "/preview", icon: Eye, available: true },
+  { id: "activity", label: "Activity", path: "/activity", icon: Activity, available: true },
   { id: "duplicates", label: "Duplicates", path: "/duplicates", icon: Copy, available: false },
-  { id: "scheduler", label: "Scheduler", path: "/scheduler", icon: CalendarClock, available: false },
+  { id: "scheduler", label: "Scheduler", path: "/scheduler", icon: CalendarClock, available: true },
   { id: "categories", label: "Categories", path: "/categories", icon: Tags, available: false },
   { id: "settings", label: "Settings", path: "/settings", icon: Settings, available: true },
 ];

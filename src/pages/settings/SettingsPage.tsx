@@ -3,9 +3,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { cn } from "@/lib/cn";
 import { AboutSection } from "./AboutSection";
 import { AppearanceSection } from "./AppearanceSection";
+import { GeneralSection } from "./GeneralSection";
 
 /** Sections ship as their backing features land (see docs/PLAN_TRACKER.md). */
 const SECTIONS = [
+  { id: "general", label: "General", Component: GeneralSection },
   { id: "appearance", label: "Appearance", Component: AppearanceSection },
   { id: "about", label: "About", Component: AboutSection },
 ] as const;

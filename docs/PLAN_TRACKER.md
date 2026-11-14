@@ -3,7 +3,7 @@
 > **This file is the source of truth for progress.** Update it in the same change as the code.
 > Requirements live in [PRD.md](PRD.md). Test IDs are defined in [TESTING_STRATEGY.md](TESTING_STRATEGY.md). Audits live in [audits/](audits/).
 
-**Last updated:** 2026-11-14 · **Current phase:** Phase 3 — Rule engine ✅ (next: Phase 4 — Safe operations)
+**Last updated:** 2026-11-14 · **Current phase:** Phase 5 — Preview & automation 🟨 (in progress)
 
 ## Status legend
 
@@ -24,8 +24,8 @@
 | 1 | Foundation | ✅ | 62 / 62 (24 Rust · 38 TS) | [phase-1](audits/phase-1.md) ✅ | 2026-11-13 |
 | 2 | Filesystem engine | ✅ | 91 / 91 (77 Rust · 14 TS) | [phase-2](audits/phase-2.md) ✅ | 2026-11-13 |
 | 3 | Rule engine | ✅ | 67 / 40 (55 Rust · 12 TS) | [phase-3](audits/phase-3.md) ✅ | 2026-11-14 |
-| 4 | Safe operations | ⬜ | 0 / 42 | ⬜ | — |
-| 5 | Preview & automation | ⬜ | 0 / 30 | ⬜ | — |
+| 4 | Safe operations | ✅ | 65 / 42 (60 Rust · 5 TS) | [phase-4](audits/phase-4.md) ✅ | 2026-11-14 |
+| 5 | Preview & automation | 🟨 | 0 / 30 | ⬜ | — |
 | 6 | Advanced features | ⬜ | 0 / 30 | ⬜ | — |
 | 7 | macOS integration | ⬜ | 0 / 18 | ⬜ | — |
 | 8 | Quality assurance | ⬜ | 0 / 20 | ⬜ | — |
@@ -168,18 +168,23 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests first | Status |
 |---|---|---|---|
-| P4-T01 | `safe_fs` module: the **only** mutating FS code. `rename_excl` (renamex_np RENAME_EXCL), `copy_excl` (create_new + streaming + fsync), `move_to_trash` | R-SFS-01..08 | ⬜ |
-| P4-T02 | `Fs` trait with real + fault-injecting test impl (fail at step N, ENOSPC, EACCES, ENOENT, EXDEV) | R-SFS-09..10 | ⬜ |
-| P4-T03 | Operation state machine with legal transitions only | R-OPS-01..05 (+proptest) | ⬜ |
-| P4-T04 | Ledger: write intent (FULL sync) before any FS mutation; batch IDs | R-LEDG-01..04 | ⬜ |
-| P4-T05 | Move pipeline: same-volume atomic; cross-volume staged copy → verify BLAKE3 → excl rename → remove source | R-MOVE-01..08 | ⬜ |
-| P4-T06 | Copy + rename pipelines | R-COPY-01..03, R-REN-01..03 | ⬜ |
-| P4-T07 | Conflict resolver: auto-rename `(n)`, skip, ask (→ Needs review), keep both; race-safe | R-CONF-01..05 (+proptest) | ⬜ |
-| P4-T08 | Undo: last / selected / batch / restore structure; occupied-path prompt; copy-undo hash check | R-UNDO-01..07 | ⬜ |
-| P4-T09 | Recovery on startup for every non-terminal state; orphan staging file cleanup (to Trash, never delete); corrupted DB → back up + recreate (NFR-032, deferred from P1) | R-RECOV-01..09 | ⬜ |
-| P4-T10 | Activity screen (table, filters, pagination, undo, reveal, retry, CSV export, clear) | UI-ACT-01..05 | ⬜ |
+| P4-T01 | `safe_fs` module: the **only** mutating FS code. `rename_excl` (renamex_np RENAME_EXCL), `copy_excl` (create_new + streaming + fsync), `move_to_trash` | R-SFS-01..08 | ✅ |
+| P4-T02 | `Fs` trait with real + fault-injecting test impl (fail at step N, ENOSPC, EACCES, ENOENT, EXDEV) | R-SFS-09..10 | ✅ |
+| P4-T03 | Operation state machine with legal transitions only | R-OPS-01..05 (+proptest) | ✅ |
+| P4-T04 | Ledger: write intent (FULL sync) before any FS mutation; batch IDs | R-LEDG-01..04 | ✅ |
+| P4-T05 | Move pipeline: same-volume atomic; cross-volume staged copy → verify BLAKE3 → excl rename → remove source | R-MOVE-01..08 | ✅ |
+| P4-T06 | Copy + rename pipelines | R-COPY-01..03, R-REN-01..03 | ✅ |
+| P4-T07 | Conflict resolver: auto-rename `(n)`, skip, ask (→ Needs review), keep both; race-safe | R-CONF-01..05 (+proptest) | ✅ |
+| P4-T08 | Undo: last / selected / batch / restore structure; occupied-path prompt; copy-undo hash check | R-UNDO-01..07 | ✅ |
+| P4-T09 | Recovery on startup for every non-terminal state; orphan staging file cleanup (to Trash, never delete); corrupted DB → back up + recreate (NFR-032, deferred from P1) | R-RECOV-01..09 | ✅ |
+| P4-T10 | Activity screen (table, filters, pagination, undo, reveal, retry, CSV export, clear) | UI-ACT-01..05 | ✅ |
 
-**Exit criteria:** fault-injection suite proves: for every crash point, the file exists exactly at source or destination (or both, never neither), and no existing file is ever overwritten. Audit-4 recorded with the safety checklist fully signed off.
+**Exit criteria:** fault-injection suite proves: for every crash point, the file exists exactly at source or destination (or both, never neither), and no existing file is ever overwritten. Audit-4 recorded with the safety checklist fully signed off. ✅ Met — see [audits/phase-4.md](audits/phase-4.md).
+
+**Phase 4 notes**
+- `SafeFs` (`src-tauri/src/engine/safe_fs/`) is the sole module with `#![allow(clippy::disallowed_methods)]` for mutating filesystem operations. Production Trash uses `NSFileManager::trashItemAtURL_resultingItemURL_error`; tests use `SafeFs::with_trash_dir` so test runs never pollute the developer's `~/.Trash` (ADR-016).
+- `LedgerToken` (minted only by `Ledger::begin_in_progress` with `PRAGMA synchronous = FULL`) and `VerifiedSourceToken` (minted only by `SafeFs::verify_copied`) enforce write-ahead logging and verified-copy source unlinking at the Rust type level.
+- Startup crash recovery (`recover_startup`) runs automatically in `AppState::build` across all approved roots, and `database::open` backs up and recreates corrupted SQLite databases (`<name>.corrupt-<epoch>.bak`, `NFR-032`).
 
 ---
 

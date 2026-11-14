@@ -68,9 +68,10 @@ async fn pick_folder(
     rx.await.ok().flatten()
 }
 
-async fn added(state: &AppState, folder: MonitoredFolder) -> MonitoredFolder {
+async fn added(state: &AppState, folder: MonitoredFolder) -> Result<MonitoredFolder, UiError> {
+    state.refresh_authority().await?;
     state.monitor.start(folder.clone()).await;
-    folder
+    Ok(folder)
 }
 
 #[tauri::command]
@@ -94,7 +95,7 @@ pub async fn folders_add_with_picker(
         return Ok(None);
     };
     let folder = state.folders.add(&path, recursive).await?;
-    Ok(Some(added(&state, folder).await))
+    Ok(Some(added(&state, folder).await?))
 }
 
 #[tauri::command]
@@ -116,7 +117,7 @@ pub async fn folders_add_known(
     }
     .map_err(|e| AppError::Internal(format!("resolve known folder: {e}")))?;
     let folder = state.folders.add(&path, recursive).await?;
-    Ok(added(&state, folder).await)
+    added(&state, folder).await
 }
 
 /// Applies edits and restarts monitoring so new settings take effect.
@@ -128,6 +129,7 @@ pub async fn folders_update(
     patch: FolderPatch,
 ) -> Result<MonitoredFolder, UiError> {
     let folder = state.folders.update(&id, patch).await?;
+    state.refresh_authority().await?;
     if folder.enabled {
         state.monitor.start(folder.clone()).await;
     } else {
@@ -141,7 +143,9 @@ pub async fn folders_update(
 #[specta::specta]
 pub async fn folders_remove(state: State<'_, AppState>, id: String) -> Result<(), UiError> {
     state.monitor.stop(&id).await;
-    Ok(state.folders.remove(&id).await?)
+    state.folders.remove(&id).await?;
+    state.refresh_authority().await?;
+    Ok(())
 }
 
 #[tauri::command]

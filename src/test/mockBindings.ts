@@ -8,8 +8,12 @@ import type {
   FolderActivityEvent,
   FolderRuntime_Serialize,
   MonitoredFolder_Serialize,
+  OnboardingState_Serialize,
+  PlanItem,
+  PlanSummary,
   RuleTemplate_Serialize,
   Rule_Serialize,
+  Schedule_Serialize,
 } from "@/bindings";
 import { appInfoFixture, defaultSettings } from "./fixtures";
 
@@ -51,6 +55,28 @@ export const commands = {
   templatePreview: vi.fn(),
   rulesTestFolder: vi.fn(),
   rulesPickDestinationFolder: vi.fn(),
+  activityList: vi.fn(),
+  activityUndo: vi.fn(),
+  activityRetry: vi.fn(),
+  activityExportCsv: vi.fn(),
+  activityClear: vi.fn(),
+  revealInFinder: vi.fn(),
+  reviewList: vi.fn(),
+  reviewResolve: vi.fn(),
+  planCreate: vi.fn(),
+  planItems: vi.fn(),
+  planExecute: vi.fn(),
+  planDiscard: vi.fn(),
+  schedulesList: vi.fn(),
+  schedulesUpsert: vi.fn(),
+  schedulesDelete: vi.fn(),
+  schedulesSetEnabled: vi.fn(),
+  schedulesRunNow: vi.fn(),
+  onboardingState: vi.fn(),
+  onboardingSetStep: vi.fn(),
+  onboardingScanPreview: vi.fn(),
+  onboardingComplete: vi.fn(),
+  onboardingReset: vi.fn(),
 };
 
 export const events = {
@@ -162,6 +188,78 @@ export function presetFixture(over: Partial<RuleTemplate_Serialize> = {}): RuleT
   };
 }
 
+export function planSummaryFixture(over: Partial<PlanSummary> = {}): PlanSummary {
+  return {
+    planId: "plan-1",
+    schemaVersion: 1,
+    createdAt: Date.now(),
+    filesEvaluated: 3,
+    filesMatched: 2,
+    filesWithConflicts: 0,
+    totalBytesAffected: 2048,
+    crossVolumeBytes: 0,
+    byCategory: [{ category: "documents", count: 2, bytes: 2048 }],
+    byRule: [{ ruleId: "r1", ruleName: "Organize Invoices", count: 2 }],
+    ...over,
+  };
+}
+
+export function planItemFixture(over: Partial<PlanItem> = {}): PlanItem {
+  return {
+    id: "item-1",
+    folderId: "f1",
+    sourcePath: "/Users/test/Downloads/invoice.pdf",
+    currentLocation: "/Users/test/Downloads",
+    originalName: "invoice.pdf",
+    proposedDestination: "/Users/test/Documents/Invoices/invoice.pdf",
+    proposedName: "invoice.pdf",
+    size: 1024,
+    category: "documents",
+    op: "move",
+    ruleId: "r1",
+    ruleName: "Organize Invoices",
+    matchedConditions: ["Extension is pdf"],
+    plannedOps: [{ kind: "move", destination_dir: "/Users/test/Documents/Invoices" }],
+    conflicts: [],
+    status: "ready",
+    crossVolume: false,
+    identity: { dev: 1, ino: 101, size: 1024, mtimeNs: 1_000_000 },
+    ...over,
+  };
+}
+
+export function scheduleFixture(over: Partial<Schedule_Serialize> = {}): Schedule_Serialize {
+  return {
+    id: "s1",
+    ruleId: null,
+    folderId: "f1",
+    scheduleType: "daily",
+    config: {
+      intervalSecs: null,
+      time: "18:00",
+      weekdays: [],
+      quietHours: null,
+      catchUp: "run_once",
+    },
+    enabled: true,
+    lastRunAt: null,
+    nextRunAt: Date.now() + 3_600_000,
+    ...over,
+  };
+}
+
+export function onboardingStateFixture(over: Partial<OnboardingState_Serialize> = {}): OnboardingState_Serialize {
+  return {
+    currentStep: 6,
+    completed: true,
+    organizationPreference: "by_category",
+    selectedPresetIds: ["pdfs", "screenshots", "invoices"],
+    automationConfirmed: true,
+    completedAt: Date.now() - 60_000,
+    ...over,
+  };
+}
+
 /** Restores default successful responses for every command. */
 export function resetBindingMocks(): void {
   statusListeners.clear();
@@ -200,5 +298,69 @@ export function resetBindingMocks(): void {
       matchedFiles: 2,
       sampleMatches: [],
     }),
+  );
+  commands.activityList.mockResolvedValue(ok({ items: [], total: 0, limit: 50, offset: 0 }));
+  commands.activityUndo.mockResolvedValue(ok({ undone: [], conflicts: [], failed: [], prunedDirs: 0 }));
+  commands.activityExportCsv.mockResolvedValue(ok("id,status\n"));
+  commands.activityClear.mockResolvedValue(ok(0));
+  commands.revealInFinder.mockResolvedValue(ok(true));
+  commands.reviewList.mockResolvedValue(ok([]));
+  commands.planCreate.mockResolvedValue(ok(planSummaryFixture()));
+  commands.planItems.mockResolvedValue(ok({ items: [], total: 0, limit: 50, offset: 0 }));
+  commands.planExecute.mockResolvedValue(
+    ok({
+      planId: "plan-1",
+      batchId: "batch-1",
+      completed: [],
+      queuedForReview: 0,
+      skippedStale: [],
+      failed: [],
+    }),
+  );
+  commands.planDiscard.mockResolvedValue(ok(true));
+  commands.schedulesList.mockResolvedValue(ok([]));
+  commands.schedulesUpsert.mockImplementation(async (input: Record<string, unknown>) =>
+    ok(
+      scheduleFixture({
+        ...(input as Partial<Schedule_Serialize>),
+        id: (input.id as string | null | undefined) ?? "s1",
+      }),
+    ),
+  );
+  commands.schedulesDelete.mockResolvedValue(ok(null));
+  commands.schedulesSetEnabled.mockImplementation(async (id: string, enabled: boolean) =>
+    ok(scheduleFixture({ id, enabled })),
+  );
+  commands.schedulesRunNow.mockResolvedValue(
+    ok({ scheduleId: "s1", status: "no_matching_files", report: null }),
+  );
+  commands.onboardingState.mockResolvedValue(ok(onboardingStateFixture()));
+  commands.onboardingSetStep.mockImplementation(async (update: Record<string, unknown>) =>
+    ok(onboardingStateFixture({ ...(update as Partial<OnboardingState_Serialize>), completed: false })),
+  );
+  commands.onboardingScanPreview.mockResolvedValue(
+    ok({
+      foldersScanned: 1,
+      totalFiles: 3,
+      totalFolders: 1,
+      totalBytes: 2048,
+      byCategory: [{ category: "documents", count: 2, bytes: 2048 }],
+      planSummary: planSummaryFixture(),
+      sampleItems: [planItemFixture()],
+    }),
+  );
+  commands.onboardingComplete.mockImplementation(async (selectedPresetIds: string[], confirmEnableAutomation: boolean) =>
+    ok({
+      state: onboardingStateFixture({
+        completed: true,
+        selectedPresetIds,
+        automationConfirmed: confirmEnableAutomation,
+      }),
+      rulesCreated: selectedPresetIds.length,
+      automationEnabled: confirmEnableAutomation,
+    }),
+  );
+  commands.onboardingReset.mockResolvedValue(
+    ok(onboardingStateFixture({ currentStep: 1, completed: false, automationConfirmed: false, completedAt: null })),
   );
 }

@@ -18,6 +18,7 @@ pub async fn monitoring_set_paused(
     state: State<'_, AppState>,
     paused: bool,
 ) -> Result<MonitoringStatus, UiError> {
+    state.pipeline.set_paused(paused);
     if paused {
         state.monitor.pause_all().await;
     } else {

@@ -55,6 +55,28 @@ export const commands = {
 	rulesTestFolder: (draft: RuleDraft_Deserialize, folderId: string, options?: InvokeOptions) => typedError<RuleTestReport, UiError_Serialize>(__TAURI_INVOKE("rules_test_folder", { draft, folderId }, options)),
 	/**  Opens the native folder picker to select and approve a destination folder. */
 	rulesPickDestinationFolder: (options?: InvokeOptions) => typedError<string | null, UiError_Serialize>(__TAURI_INVOKE("rules_pick_destination_folder", undefined, options)),
+	activityList: (filter: ActivityFilter_Deserialize, page: PageRequest, options?: InvokeOptions) => typedError<ActivityPage_Serialize, UiError_Serialize>(__TAURI_INVOKE("activity_list", { filter, page }, options)),
+	activityUndo: (target: UndoTarget_Deserialize, options?: InvokeOptions) => typedError<UndoReport_Serialize, UiError_Serialize>(__TAURI_INVOKE("activity_undo", { target }, options)),
+	activityRetry: (opId: string, options?: InvokeOptions) => typedError<OperationView_Serialize, UiError_Serialize>(__TAURI_INVOKE("activity_retry", { opId }, options)),
+	activityExportCsv: (filter: ActivityFilter_Deserialize, options?: InvokeOptions) => typedError<string, UiError_Serialize>(__TAURI_INVOKE("activity_export_csv", { filter }, options)),
+	activityClear: (beforeMs: number | null, options?: InvokeOptions) => typedError<number, UiError_Serialize>(__TAURI_INVOKE("activity_clear", { beforeMs }, options)),
+	revealInFinder: (opId: string, which: RevealTarget, options?: InvokeOptions) => typedError<boolean, UiError_Serialize>(__TAURI_INVOKE("reveal_in_finder", { opId, which }, options)),
+	reviewList: (options?: InvokeOptions) => typedError<ReviewItemView_Serialize[], UiError_Serialize>(__TAURI_INVOKE("review_list", undefined, options)),
+	reviewResolve: (id: string, decision: ReviewDecision, options?: InvokeOptions) => typedError<ReviewResolveReport_Serialize, UiError_Serialize>(__TAURI_INVOKE("review_resolve", { id, decision }, options)),
+	planCreate: (scope: PlanScope_Deserialize, options?: InvokeOptions) => typedError<PlanSummary, UiError_Serialize>(__TAURI_INVOKE("plan_create", { scope }, options)),
+	planItems: (planId: string, filter: PlanItemFilter_Deserialize, limit: number, offset: number, options?: InvokeOptions) => typedError<PlanItemsPage, UiError_Serialize>(__TAURI_INVOKE("plan_items", { planId, filter, limit, offset }, options)),
+	planExecute: (planId: string, selectedItemIds: string[] | null, conflictPolicy: ConflictPolicy, options?: InvokeOptions) => typedError<PlanExecutionReport_Serialize, UiError_Serialize>(__TAURI_INVOKE("plan_execute", { planId, selectedItemIds, conflictPolicy }, options)),
+	planDiscard: (planId: string, options?: InvokeOptions) => typedError<boolean, UiError_Serialize>(__TAURI_INVOKE("plan_discard", { planId }, options)),
+	schedulesList: (options?: InvokeOptions) => typedError<Schedule_Serialize[], UiError_Serialize>(__TAURI_INVOKE("schedules_list", undefined, options)),
+	schedulesUpsert: (input: ScheduleInput_Deserialize, options?: InvokeOptions) => typedError<Schedule_Serialize, UiError_Serialize>(__TAURI_INVOKE("schedules_upsert", { input }, options)),
+	schedulesDelete: (id: string, options?: InvokeOptions) => typedError<null, UiError_Serialize>(__TAURI_INVOKE("schedules_delete", { id }, options)),
+	schedulesSetEnabled: (id: string, enabled: boolean, options?: InvokeOptions) => typedError<Schedule_Serialize, UiError_Serialize>(__TAURI_INVOKE("schedules_set_enabled", { id, enabled }, options)),
+	schedulesRunNow: (id: string, options?: InvokeOptions) => typedError<ScheduleRunOutcome_Serialize, UiError_Serialize>(__TAURI_INVOKE("schedules_run_now", { id }, options)),
+	onboardingState: (options?: InvokeOptions) => typedError<OnboardingState_Serialize, UiError_Serialize>(__TAURI_INVOKE("onboarding_state", undefined, options)),
+	onboardingSetStep: (update: OnboardingStepUpdate_Deserialize, options?: InvokeOptions) => typedError<OnboardingState_Serialize, UiError_Serialize>(__TAURI_INVOKE("onboarding_set_step", { update }, options)),
+	onboardingScanPreview: (selectedPresetIds: string[] | null, options?: InvokeOptions) => typedError<OnboardingScanReport, UiError_Serialize>(__TAURI_INVOKE("onboarding_scan_preview", { selectedPresetIds }, options)),
+	onboardingComplete: (selectedPresetIds: string[], confirmEnableAutomation: boolean, options?: InvokeOptions) => typedError<OnboardingCompleteReport_Serialize, UiError_Serialize>(__TAURI_INVOKE("onboarding_complete", { selectedPresetIds, confirmEnableAutomation }, options)),
+	onboardingReset: (options?: InvokeOptions) => typedError<OnboardingState_Serialize, UiError_Serialize>(__TAURI_INVOKE("onboarding_reset", undefined, options)),
 };
 
 /** Events */
@@ -72,6 +94,40 @@ export type Action_Deserialize = { kind: "move"; destination: string } | { kind:
 
 /**  Rule actions (FR-050). No shell/script/command execution exists (FR-051). */
 export type Action_Serialize = { kind: "move"; destination: string } | { kind: "move_into_dynamic_folder"; root: string | null; subpath_template: string } | { kind: "copy"; destination: string } | { kind: "rename"; template: string } | { kind: "add_prefix"; prefix: string } | { kind: "add_suffix"; suffix: string } | { kind: "remove_text"; text: string; case_sensitive: boolean } | { kind: "replace_text"; find: string; replace: string; case_sensitive: boolean } | { kind: "add_date_to_filename"; placement: DatePlacement; format: string } | { kind: "change_extension"; new_extension: string; confirm_unsafe: boolean } | { kind: "create_destination_folder"; path: string } | { kind: "skip" } | { kind: "stop_processing" } | { kind: "notify"; message: string } | { kind: "mark_for_review"; reason: string } | { kind: "apply_another_rule"; rule_id: string };
+
+export type ActivityFilter = ActivityFilter_Serialize | ActivityFilter_Deserialize;
+
+export type ActivityFilter_Deserialize = {
+	search?: string | null,
+	status?: OpStatus | null,
+	operationType?: OpKind | null,
+	ruleId?: string | null,
+	folderPathPrefix?: string | null,
+};
+
+export type ActivityFilter_Serialize = {
+	search: string | null,
+	status: OpStatus | null,
+	operationType: OpKind | null,
+	ruleId: string | null,
+	folderPathPrefix: string | null,
+};
+
+export type ActivityPage = ActivityPage_Serialize | ActivityPage_Deserialize;
+
+export type ActivityPage_Deserialize = {
+	items: OperationView_Deserialize[],
+	total: number,
+	limit: number,
+	offset: number,
+};
+
+export type ActivityPage_Serialize = {
+	items: OperationView_Serialize[],
+	total: number,
+	limit: number,
+	offset: number,
+};
 
 export type AppInfo = {
 	version: string,
@@ -92,6 +148,8 @@ export type AppearanceSettings_Serialize = {
 	theme: ThemeMode,
 	density: Density,
 };
+
+export type CatchUpPolicy = "skip" | "run_once";
 
 /**  A file category (built-in or custom). `id` is stable; built-ins use their slug. */
 export type Category = Category_Serialize | Category_Deserialize;
@@ -177,6 +235,14 @@ export type EvaluatedAction = {
 export type ExecutionMode = "first_match" | "continue" | "stop_after_move" | "stop_after_action" | "sequential";
 
 export type FileActivityKind = "stable" | "removed";
+
+/**  Snapshot of a file's physical identity at plan creation time (`FR-085`). */
+export type FileIdentitySnapshot = {
+	dev: number | null,
+	ino: number | null,
+	size: number | null,
+	mtimeNs: number | null,
+};
 
 /**  Result of probing whether FolderFlow can read a folder (FR-003). */
 export type FolderAccess = "granted" | "denied" | "missing" | "not_a_folder";
@@ -375,6 +441,120 @@ export type MonitoringStatus_Serialize = {
 	folders: FolderRuntime_Serialize[],
 };
 
+export type OnboardingCompleteReport = OnboardingCompleteReport_Serialize | OnboardingCompleteReport_Deserialize;
+
+export type OnboardingCompleteReport_Deserialize = {
+	state: OnboardingState_Deserialize,
+	rulesCreated: number,
+	automationEnabled: boolean,
+};
+
+export type OnboardingCompleteReport_Serialize = {
+	state: OnboardingState_Serialize,
+	rulesCreated: number,
+	automationEnabled: boolean,
+};
+
+export type OnboardingScanReport = {
+	foldersScanned: number,
+	totalFiles: number,
+	totalFolders: number,
+	totalBytes: number | null,
+	byCategory: PlanCategoryCount[],
+	planSummary: PlanSummary,
+	sampleItems: PlanItem[],
+};
+
+export type OnboardingState = OnboardingState_Serialize | OnboardingState_Deserialize;
+
+export type OnboardingState_Deserialize = {
+	/**  Current step index `1..=6` (`FR-009` resume support). */
+	currentStep: number,
+	completed: boolean,
+	organizationPreference: OrganizationPreference,
+	selectedPresetIds: string[],
+	automationConfirmed: boolean,
+	completedAt?: number | null,
+};
+
+export type OnboardingState_Serialize = {
+	/**  Current step index `1..=6` (`FR-009` resume support). */
+	currentStep: number,
+	completed: boolean,
+	organizationPreference: OrganizationPreference,
+	selectedPresetIds: string[],
+	automationConfirmed: boolean,
+	completedAt: number | null,
+};
+
+export type OnboardingStepUpdate = OnboardingStepUpdate_Serialize | OnboardingStepUpdate_Deserialize;
+
+export type OnboardingStepUpdate_Deserialize = {
+	currentStep: number,
+	organizationPreference?: OrganizationPreference | null,
+	selectedPresetIds?: string[] | null,
+};
+
+export type OnboardingStepUpdate_Serialize = {
+	currentStep: number,
+	organizationPreference: OrganizationPreference | null,
+	selectedPresetIds: string[] | null,
+};
+
+/**  Operation types matching `operations.operation_type` in `0001_init.sql`. */
+export type OpKind = "move" | "copy" | "rename" | "trash" | "undo_move" | "undo_copy" | "undo_rename";
+
+/**  Operation status values matching `operations.status` in `0001_init.sql`. */
+export type OpStatus = "PENDING" | "VALIDATING" | "IN_PROGRESS" | "VERIFYING" | "COMPLETED" | "FAILED" | "ROLLBACK_REQUIRED" | "ROLLED_BACK";
+
+export type OperationView = OperationView_Serialize | OperationView_Deserialize;
+
+export type OperationView_Deserialize = {
+	id: string,
+	batchId?: string | null,
+	operationType: OpKind,
+	sourcePath: string,
+	destinationPath: string,
+	originalName: string,
+	newName: string,
+	size?: number | null,
+	contentHash?: string | null,
+	crossVolume: boolean,
+	ruleId?: string | null,
+	ruleName?: string | null,
+	status: OpStatus,
+	reversible: boolean,
+	reversedBy?: string | null,
+	errorCode?: string | null,
+	errorMessage?: string | null,
+	startedAt: number | null,
+	completedAt?: number | null,
+};
+
+export type OperationView_Serialize = {
+	id: string,
+	batchId: string | null,
+	operationType: OpKind,
+	sourcePath: string,
+	destinationPath: string,
+	originalName: string,
+	newName: string,
+	size: number | null,
+	contentHash: string | null,
+	crossVolume: boolean,
+	ruleId: string | null,
+	ruleName: string | null,
+	status: OpStatus,
+	reversible: boolean,
+	reversedBy: string | null,
+	errorCode: string | null,
+	errorMessage: string | null,
+	startedAt: number | null,
+	completedAt: number | null,
+};
+
+export type OrganizationPreference = "by_type" | "by_date" | "by_category" | "custom_rules" | "keep_original_structure";
+
 export type OrganizationSettings = OrganizationSettings_Serialize | OrganizationSettings_Deserialize;
 
 export type OrganizationSettings_Deserialize = {
@@ -395,6 +575,11 @@ export type OrganizationSettings_Serialize = {
 	autoCreateFolders: boolean,
 };
 
+export type PageRequest = {
+	limit: number,
+	offset: number,
+};
+
 export type PerformanceSettings = PerformanceSettings_Serialize | PerformanceSettings_Deserialize;
 
 export type PerformanceSettings_Deserialize = {
@@ -411,6 +596,136 @@ export type PerformanceSettings_Serialize = {
 	maxScanConcurrency: number,
 };
 
+export type PlanCategoryCount = {
+	category: string,
+	count: number,
+	bytes: number | null,
+};
+
+/**  A single conflict or warning attached to a [`PlanItem`]. */
+export type PlanConflict = {
+	kind: PlanConflictKind,
+	message: string,
+};
+
+/**  Conflict category detected during dry-run planning (`FR-082`). */
+export type PlanConflictKind = { kind: "destination_exists_on_disk" } | { kind: "duplicate_in_plan"; colliding_item_ids: string[] } | { kind: "destination_unauthorized" } | { kind: "permission_denied" } | { kind: "destination_unavailable" } | { kind: "insufficient_disk_space" } | { kind: "conflicting_rules" };
+
+/**  Result of executing an [`ExecutionPlan`] (`P5-T03`). */
+export type PlanExecutionReport = PlanExecutionReport_Serialize | PlanExecutionReport_Deserialize;
+
+/**  Result of executing an [`ExecutionPlan`] (`P5-T03`). */
+export type PlanExecutionReport_Deserialize = {
+	planId: string,
+	batchId: string,
+	completed: OperationView_Deserialize[],
+	queuedForReview: number,
+	skippedStale: SkippedPlanItem[],
+	failed: string[],
+};
+
+/**  Result of executing an [`ExecutionPlan`] (`P5-T03`). */
+export type PlanExecutionReport_Serialize = {
+	planId: string,
+	batchId: string,
+	completed: OperationView_Serialize[],
+	queuedForReview: number,
+	skippedStale: SkippedPlanItem[],
+	failed: string[],
+};
+
+/**  One file item inside an [`ExecutionPlan`] (`FR-080`, `FR-085`). */
+export type PlanItem = {
+	id: string,
+	folderId: string,
+	sourcePath: string,
+	currentLocation: string,
+	originalName: string,
+	proposedDestination: string,
+	proposedName: string,
+	size: number | null,
+	category: string,
+	op: PlanOpKind,
+	ruleId: string,
+	ruleName: string,
+	matchedConditions: string[],
+	plannedOps: PlannedOp[],
+	conflicts: PlanConflict[],
+	status: PlanItemStatus,
+	crossVolume: boolean,
+	identity: FileIdentitySnapshot,
+};
+
+/**  Filter for querying [`PlanItem`] rows in [`PreviewService::items`] (`FR-081`). */
+export type PlanItemFilter = PlanItemFilter_Serialize | PlanItemFilter_Deserialize;
+
+/**  Filter for querying [`PlanItem`] rows in [`PreviewService::items`] (`FR-081`). */
+export type PlanItemFilter_Deserialize = {
+	search?: string | null,
+	category?: string | null,
+	ruleId?: string | null,
+	onlyConflicts?: boolean | null,
+};
+
+/**  Filter for querying [`PlanItem`] rows in [`PreviewService::items`] (`FR-081`). */
+export type PlanItemFilter_Serialize = {
+	search: string | null,
+	category: string | null,
+	ruleId: string | null,
+	onlyConflicts: boolean | null,
+};
+
+/**  Status badge of a planned item (`FR-080`). */
+export type PlanItemStatus = "ready" | "conflict" | "needs_review" | "blocked";
+
+/**  Paginated response of [`PlanItem`]s. */
+export type PlanItemsPage = {
+	items: PlanItem[],
+	total: number,
+	limit: number,
+	offset: number,
+};
+
+/**  Primary operation kind for a planned item (`FR-080`). */
+export type PlanOpKind = "move" | "copy" | "rename" | "mark_for_review";
+
+export type PlanRuleCount = {
+	ruleId: string,
+	ruleName: string,
+	count: number,
+};
+
+/**  Scope of a dry-run preview request (`FR-081`). */
+export type PlanScope = PlanScope_Serialize | PlanScope_Deserialize;
+
+/**  Scope of a dry-run preview request (`FR-081`). */
+export type PlanScope_Deserialize = {
+	folderId?: string | null,
+	ruleId?: string | null,
+	filePaths?: string[] | null,
+};
+
+/**  Scope of a dry-run preview request (`FR-081`). */
+export type PlanScope_Serialize = {
+	folderId: string | null,
+	ruleId: string | null,
+	filePaths: string[] | null,
+};
+
+/**  Aggregate summary of an [`ExecutionPlan`] (`FR-083`). */
+export type PlanSummary = {
+	planId: string,
+	schemaVersion: number,
+	createdAt: number | null,
+	filesEvaluated: number,
+	filesMatched: number,
+	filesWithConflicts: number,
+	totalBytesAffected: number | null,
+	crossVolumeBytes: number | null,
+	byCategory: PlanCategoryCount[],
+	byRule: PlanRuleCount[],
+};
+
 export type PlannedOp = { kind: "move"; destination_dir: string } | { kind: "copy"; destination_dir: string } | { kind: "rename"; new_name: string } | { kind: "create_folder"; path: string } | { kind: "notify"; message: string } | { kind: "mark_for_review"; reason: string };
 
 export type PrivacySettings = PrivacySettings_Serialize | PrivacySettings_Deserialize;
@@ -425,6 +740,67 @@ export type PrivacySettings_Serialize = {
 	redactPathsInLogs: boolean,
 	logLevel: LogLevel,
 	logRetentionDays: number,
+};
+
+export type QuietHours = {
+	/**  Local wall-clock time `HH:MM` (24-hour). */
+	start: string,
+	/**  Local wall-clock time `HH:MM` (24-hour). */
+	end: string,
+};
+
+/**  Which path of an operation to reveal in Finder (`FR-163`). */
+export type RevealTarget = "source" | "destination";
+
+/**  User decision for a conflict item in `review_queue` (`FR-093`). */
+export type ReviewDecision = 
+/**  Keep existing destination file and place incoming file as `name (N).ext`. */
+"keep_both" | 
+/**  Leave incoming file at source and mark review item resolved. */
+"skip";
+
+export type ReviewItemView = ReviewItemView_Serialize | ReviewItemView_Deserialize;
+
+export type ReviewItemView_Deserialize = {
+	id: string,
+	path: string,
+	reason: string,
+	ruleId?: string | null,
+	proposed?: ReviewProposedAction | null,
+	createdAt: number | null,
+	resolvedAt?: number | null,
+};
+
+export type ReviewItemView_Serialize = {
+	id: string,
+	path: string,
+	reason: string,
+	ruleId: string | null,
+	proposed: ReviewProposedAction | null,
+	createdAt: number | null,
+	resolvedAt: number | null,
+};
+
+export type ReviewProposedAction = {
+	operationType: OpKind,
+	sourcePath: string,
+	destinationPath: string,
+	originalName: string,
+	newName: string,
+};
+
+export type ReviewResolveReport = ReviewResolveReport_Serialize | ReviewResolveReport_Deserialize;
+
+export type ReviewResolveReport_Deserialize = {
+	reviewId: string,
+	decision: ReviewDecision,
+	operation?: OperationView_Deserialize | null,
+};
+
+export type ReviewResolveReport_Serialize = {
+	reviewId: string,
+	decision: ReviewDecision,
+	operation: OperationView_Serialize | null,
 };
 
 export type Rule = Rule_Serialize | Rule_Deserialize;
@@ -553,6 +929,96 @@ export type SampleFile_Serialize = {
 	addedMs: number | null,
 };
 
+export type Schedule = Schedule_Serialize | Schedule_Deserialize;
+
+export type ScheduleConfig = ScheduleConfig_Serialize | ScheduleConfig_Deserialize;
+
+export type ScheduleConfig_Deserialize = {
+	/**  Used when `schedule_type == Interval` (e.g., 300, 900, 1800, 3600). */
+	intervalSecs?: number | null,
+	/**  Local wall-clock time `HH:MM` used for `Daily` and `Weekly`. */
+	time?: string | null,
+	/**  Days of week for `Weekly` schedules. */
+	weekdays?: Weekday[],
+	/**  Optional quiet hours window during which automatic execution is deferred. */
+	quietHours?: QuietHours | null,
+	/**  Behavior when scheduled runs were missed while asleep (`FR-133`). */
+	catchUp?: CatchUpPolicy,
+};
+
+export type ScheduleConfig_Serialize = {
+	/**  Used when `schedule_type == Interval` (e.g., 300, 900, 1800, 3600). */
+	intervalSecs: number | null,
+	/**  Local wall-clock time `HH:MM` used for `Daily` and `Weekly`. */
+	time: string | null,
+	/**  Days of week for `Weekly` schedules. */
+	weekdays: Weekday[],
+	/**  Optional quiet hours window during which automatic execution is deferred. */
+	quietHours: QuietHours | null,
+	/**  Behavior when scheduled runs were missed while asleep (`FR-133`). */
+	catchUp: CatchUpPolicy,
+};
+
+export type ScheduleInput = ScheduleInput_Serialize | ScheduleInput_Deserialize;
+
+export type ScheduleInput_Deserialize = {
+	id?: string | null,
+	ruleId?: string | null,
+	folderId?: string | null,
+	scheduleType: ScheduleType,
+	config: ScheduleConfig_Deserialize,
+	enabled: boolean,
+};
+
+export type ScheduleInput_Serialize = {
+	id: string | null,
+	ruleId: string | null,
+	folderId: string | null,
+	scheduleType: ScheduleType,
+	config: ScheduleConfig_Serialize,
+	enabled: boolean,
+};
+
+export type ScheduleRunOutcome = ScheduleRunOutcome_Serialize | ScheduleRunOutcome_Deserialize;
+
+export type ScheduleRunOutcome_Deserialize = {
+	scheduleId: string,
+	status: ScheduleRunStatus,
+	report?: PlanExecutionReport_Deserialize | null,
+};
+
+export type ScheduleRunOutcome_Serialize = {
+	scheduleId: string,
+	status: ScheduleRunStatus,
+	report: PlanExecutionReport_Serialize | null,
+};
+
+export type ScheduleRunStatus = "executed" | "no_matching_files" | "skipped_overlap" | "skipped_quiet_hours" | "skipped_missed" | "disabled";
+
+export type ScheduleType = "realtime" | "interval" | "daily" | "weekly" | "on_launch" | "manual";
+
+export type Schedule_Deserialize = {
+	id: string,
+	ruleId?: string | null,
+	folderId?: string | null,
+	scheduleType: ScheduleType,
+	config: ScheduleConfig_Deserialize,
+	enabled: boolean,
+	lastRunAt?: number | null,
+	nextRunAt?: number | null,
+};
+
+export type Schedule_Serialize = {
+	id: string,
+	ruleId: string | null,
+	folderId: string | null,
+	scheduleType: ScheduleType,
+	config: ScheduleConfig_Serialize,
+	enabled: boolean,
+	lastRunAt: number | null,
+	nextRunAt: number | null,
+};
+
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
 export type Settings_Deserialize = {
@@ -577,6 +1043,16 @@ export type SizeOp = "greater_than" | "less_than" | "equals" | "between";
 
 /**  Decimal storage units (FR-044: 1 KB = 1000 B). */
 export type SizeUnit = "bytes" | "kilobytes" | "megabytes" | "gigabytes";
+
+export type SkippedPlanItem = {
+	itemId: string,
+	sourcePath: string,
+	reason: StaleReason,
+	message: string,
+};
+
+/**  Reason a plan item was skipped as stale during execution (`FR-086`, `SAFETY_MODEL.md` S6). */
+export type StaleReason = "source_missing" | "identity_changed" | "modified_since_plan" | "destination_occupied_since_plan" | "blocked_by_conflict";
 
 export type TemplatePreviewInput = TemplatePreviewInput_Serialize | TemplatePreviewInput_Deserialize;
 
@@ -635,6 +1111,54 @@ export type UiError_Serialize = {
 	field: string | null,
 };
 
+/**  Reported when the original path is now occupied by another file (`SAFETY_MODEL.md` § Undo safety). */
+export type UndoConflict = {
+	opId: string,
+	originalPath: string,
+	currentPath: string,
+	reason: string,
+};
+
+/**  Summary returned by an undo invocation. */
+export type UndoReport = UndoReport_Serialize | UndoReport_Deserialize;
+
+/**  Summary returned by an undo invocation. */
+export type UndoReport_Deserialize = {
+	undone: OperationView_Deserialize[],
+	conflicts: UndoConflict[],
+	failed: string[],
+	prunedDirs: number,
+};
+
+/**  Summary returned by an undo invocation. */
+export type UndoReport_Serialize = {
+	undone: OperationView_Serialize[],
+	conflicts: UndoConflict[],
+	failed: string[],
+	prunedDirs: number,
+};
+
+/**  What the user wants to undo (`P4-T08`, `P4-T10`). */
+export type UndoTarget = UndoTarget_Serialize | UndoTarget_Deserialize;
+
+/**  What the user wants to undo (`P4-T08`, `P4-T10`). */
+export type UndoTarget_Deserialize = 
+/**  Undo the single most recent undoable operation. */
+{ kind: "last"; auto_rename_conflicts?: boolean } | 
+/**  Undo a specific set of operation IDs (executed in reverse chronological order). */
+{ kind: "ops"; op_ids: string[]; auto_rename_conflicts?: boolean } | 
+/**  Undo an entire batch in reverse order, optionally pruning created empty directories. */
+{ kind: "batch"; batch_id: string; restore_structure?: boolean; auto_rename_conflicts?: boolean };
+
+/**  What the user wants to undo (`P4-T08`, `P4-T10`). */
+export type UndoTarget_Serialize = 
+/**  Undo the single most recent undoable operation. */
+{ kind: "last"; auto_rename_conflicts: boolean } | 
+/**  Undo a specific set of operation IDs (executed in reverse chronological order). */
+{ kind: "ops"; op_ids: string[]; auto_rename_conflicts: boolean } | 
+/**  Undo an entire batch in reverse order, optionally pruning created empty directories. */
+{ kind: "batch"; batch_id: string; restore_structure: boolean; auto_rename_conflicts: boolean };
+
 export type ValidationIssue = {
 	field: string,
 	code: string,
@@ -649,6 +1173,8 @@ export type WatcherErrorView = {
 	message: string,
 	occurredAt: number | null,
 };
+
+export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

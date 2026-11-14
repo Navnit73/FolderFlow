@@ -2,7 +2,7 @@
 
 **Your files organized automatically.** An offline-first, privacy-first automatic file organizer for macOS 13+, built with Tauri 2, Rust and React.
 
-> Status: **Phase 3 (rule engine) complete.** Next: Phase 4 — safe operations. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
+> Status: **Phase 4 (safe operations) complete.** Next: Phase 5 — preview & automation. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
 
 ## Documentation
 

@@ -20,10 +20,35 @@ fn base_options(opts: SqliteConnectOptions) -> SqliteConnectOptions {
 }
 
 /// Opens (creating if needed) the database file and applies pending migrations.
+///
+/// Per `NFR-032` (`P4-T09`), if the existing database file is corrupted (`SQLITE_CORRUPT` /
+/// `SQLITE_NOTADB` / malformed), it is backed up to `<filename>.corrupt-<epoch_ms>.bak`
+/// using `SafeFs::rename_excl` and a fresh database is initialized in its place.
 pub async fn open(path: &Path) -> AppResult<Db> {
+    use crate::engine::safe_fs::Fs;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        crate::engine::safe_fs::SafeFs::production().mkdir_p(parent)?;
     }
+    match try_open_and_migrate(path).await {
+        Ok(pool) => {
+            tracing::info!(target: "folderflow::db", "database ready");
+            Ok(pool)
+        }
+        Err(err) if is_corruption_error(&err) && path.exists() => {
+            backup_corrupt_database(path)?;
+            let pool = try_open_and_migrate(path).await?;
+            tracing::warn!(
+                target: "folderflow::db",
+                error = %err,
+                "corrupted database was backed up and recreated"
+            );
+            Ok(pool)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn try_open_and_migrate(path: &Path) -> AppResult<Db> {
     let opts = base_options(
         SqliteConnectOptions::new()
             .filename(path)
@@ -34,8 +59,40 @@ pub async fn open(path: &Path) -> AppResult<Db> {
         .connect_with(opts)
         .await?;
     MIGRATOR.run(&pool).await?;
-    tracing::info!(target: "folderflow::db", "database ready");
     Ok(pool)
+}
+
+fn is_corruption_error(err: &crate::error::AppError) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("not a database")
+        || msg.contains("malformed")
+        || msg.contains("corrupt")
+        || msg.contains("code: 11")
+        || msg.contains("code: 26")
+}
+
+fn backup_corrupt_database(path: &Path) -> AppResult<()> {
+    use crate::engine::safe_fs::{Fs, SafeFs};
+
+    let fs = SafeFs::production();
+    let stamp = crate::utils::time::now_ms();
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "folderflow.db".to_owned());
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+
+    let backup_path = parent.join(format!("{file_name}.corrupt-{stamp}.bak"));
+    fs.rename_excl(path, &backup_path)?;
+
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = parent.join(format!("{file_name}{suffix}"));
+        if fs.exists_no_follow(&sidecar) {
+            let sidecar_bak = parent.join(format!("{file_name}{suffix}.corrupt-{stamp}.bak"));
+            let _ = fs.rename_excl(&sidecar, &sidecar_bak);
+        }
+    }
+    Ok(())
 }
 
 /// In-memory database for tests. Single connection so all queries share it.
