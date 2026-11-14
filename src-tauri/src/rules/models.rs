@@ -252,6 +252,54 @@ pub enum ConditionNode {
     Leaf { condition: Condition },
 }
 
+impl ConditionNode {
+    /// Inspects a condition tree and reports `(needs_content_hash, needs_duplicate_status)`.
+    pub fn hash_requirements(&self) -> (bool, bool) {
+        match self {
+            ConditionNode::Leaf { condition } => match condition {
+                Condition::ContentHash { .. } => (true, false),
+                Condition::DuplicateStatus { .. } => (false, true),
+                _ => (false, false),
+            },
+            ConditionNode::Not { child } => child.hash_requirements(),
+            ConditionNode::All { children } | ConditionNode::Any { children } => {
+                children.iter().fold((false, false), |acc, c| {
+                    let (h, d) = c.hash_requirements();
+                    (acc.0 || h, acc.1 || d)
+                })
+            }
+        }
+    }
+}
+
+/// Inspects enabled rules and returns `(needs_content_hash, needs_duplicate_status)`.
+pub fn rules_hash_requirements(rules: &[Rule]) -> (bool, bool) {
+    rules
+        .iter()
+        .filter(|r| r.enabled)
+        .fold((false, false), |acc, r| {
+            let (h, d) = r.conditions.hash_requirements();
+            (acc.0 || h, acc.1 || d)
+        })
+}
+
+/// Filters rules to `rule_id` (forced enabled for manual preview/single-rule runs) when set.
+pub fn scope_rules(rules: &[Rule], rule_id: Option<&str>) -> Vec<Rule> {
+    if let Some(id) = rule_id {
+        rules
+            .iter()
+            .filter(|r| r.id == id)
+            .map(|r| {
+                let mut cloned = r.clone();
+                cloned.enabled = true;
+                cloned
+            })
+            .collect()
+    } else {
+        rules.to_vec()
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum DatePlacement {

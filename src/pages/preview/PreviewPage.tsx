@@ -209,6 +209,7 @@ export function PreviewPage() {
 
           <input
             type="search"
+            data-ff-search="true"
             aria-label="Search planned files"
             placeholder="Search filename, rule, or destination…"
             value={filter.search ?? ""}

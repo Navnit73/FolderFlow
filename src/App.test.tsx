@@ -21,7 +21,7 @@ describe("App bootstrap", () => {
     s.appearance = { theme: "dark", density: "compact" };
     mocked.settingsGet.mockResolvedValue({ status: "ok", data: s });
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "Folders" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(document.documentElement).toHaveAttribute("data-density", "compact");
   });
@@ -33,6 +33,6 @@ describe("App bootstrap", () => {
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent("DB unavailable");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("heading", { name: "Folders" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
   });
 });

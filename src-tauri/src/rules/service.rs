@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
-use crate::database::{repo_files, repo_folders, repo_rules, Db};
+use crate::database::{repo_categories, repo_files, repo_folders, repo_rules, Db};
 use crate::engine::paths::{validate_new_root, RootPolicy};
 use crate::error::{AppError, AppResult};
 use crate::rules::evaluator::{evaluate_rules, EvaluatedAction};
@@ -163,6 +163,20 @@ impl RuleService {
         let tpl = find_starter_template(preset_id)
             .ok_or_else(|| AppError::NotFound("Rule preset".into()))?;
         self.create(tpl.draft, RuleOrigin::Preset).await
+    }
+
+    pub async fn smart_catalog(&self) -> AppResult<crate::rules::SmartOrganizerCatalog> {
+        let cats = repo_categories::list(&self.db).await?;
+        Ok(crate::rules::build_smart_catalog(&cats))
+    }
+
+    pub async fn create_smart_preset(
+        &self,
+        spec: crate::rules::SmartOrganizerSpec,
+    ) -> AppResult<Rule> {
+        let cats = repo_categories::list(&self.db).await?;
+        let draft = crate::rules::build_smart_draft(spec, &cats)?;
+        self.create(draft, RuleOrigin::Preset).await
     }
 
     pub async fn update(&self, id: &str, draft: RuleDraft) -> AppResult<Rule> {

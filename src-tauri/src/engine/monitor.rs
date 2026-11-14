@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -199,6 +199,7 @@ struct Shared {
     db: Db,
     classifier: std::sync::RwLock<Arc<Classifier>>,
     settings: std::sync::RwLock<MonitoringSettings>,
+    spec_gen: AtomicU64,
     observer: Arc<dyn MonitorObserver>,
     timing: MonitorTiming,
     watcher_factory: WatcherFactory,
@@ -224,6 +225,8 @@ enum Command {
     Pause,
     Resume,
     Rescan,
+    Recheck,
+    Refresh,
     Stop,
 }
 
@@ -253,6 +256,7 @@ impl MonitorService {
                 db: deps.db,
                 classifier: std::sync::RwLock::new(deps.classifier),
                 settings: std::sync::RwLock::new(deps.settings),
+                spec_gen: AtomicU64::new(0),
                 observer: deps.observer,
                 timing: deps.timing,
                 watcher_factory: deps.watcher_factory,
@@ -268,10 +272,20 @@ impl MonitorService {
         }
     }
 
-    /// Updates ignore settings for folders started afterwards (restart to apply).
+    /// Updates ignore settings for folders and notifies running watchers to reload specs.
     pub fn set_settings(&self, s: MonitoringSettings) {
         if let Ok(mut g) = self.shared.settings.write() {
             *g = s;
+        }
+        self.shared.spec_gen.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Notifies all running folder watchers to reload database exclusions and monitoring settings.
+    pub async fn refresh_exclusions(&self) {
+        self.shared.spec_gen.fetch_add(1, Ordering::SeqCst);
+        let inner = self.inner.lock().await;
+        for h in inner.folders.values() {
+            let _ = h.cmd.try_send(Command::Refresh);
         }
     }
 
@@ -316,6 +330,14 @@ impl MonitorService {
         let inner = self.inner.lock().await;
         if let Some(h) = inner.folders.get(id) {
             let _ = h.cmd.send(Command::Rescan).await;
+        }
+    }
+
+    /// Re-checks folder availability (and triggers reconcile if accessible).
+    pub async fn recheck(&self, id: &str) {
+        let inner = self.inner.lock().await;
+        if let Some(h) = inner.folders.get(id) {
+            let _ = h.cmd.send(Command::Recheck).await;
         }
     }
 
@@ -397,6 +419,7 @@ fn spawn_folder(shared: Arc<Shared>, folder: MonitoredFolder, paused: bool) -> F
         .unwrap_or(timing.stability_interval);
     let task = FolderTask {
         spec: FolderScanSpec::from_folder(&folder, &settings),
+        spec_gen: shared.spec_gen.load(Ordering::SeqCst),
         root: PathBuf::from(&folder.path),
         scanned_before: folder.last_scanned_at.is_some(),
         debouncer: Debouncer::new(timing.debounce, timing.max_pending),
@@ -437,6 +460,7 @@ struct FolderTask {
     shared: Arc<Shared>,
     folder: MonitoredFolder,
     spec: FolderScanSpec,
+    spec_gen: u64,
     root: PathBuf,
     cmd_rx: mpsc::Receiver<Command>,
     status_tx: watch::Sender<FolderRuntime>,
@@ -484,6 +508,7 @@ impl FolderTask {
                 }
             }
 
+            self.refresh_spec().await;
             let (tx, rx) = mpsc::channel(RAW_CHANNEL_CAPACITY);
             let overflow = Arc::new(AtomicBool::new(false));
             let watcher = match (self.shared.watcher_factory)(
@@ -567,6 +592,13 @@ impl FolderTask {
                     None | Some(Command::Stop) => return Exit::Stop,
                     Some(Command::Pause) => return Exit::Pause,
                     Some(Command::Rescan) => self.reconcile_at = Some(Instant::now()),
+                    Some(Command::Recheck) => {
+                        if probe_access(&self.root) != FolderAccess::Granted {
+                            return Exit::Recheck;
+                        }
+                        self.reconcile_at = Some(Instant::now());
+                    }
+                    Some(Command::Refresh) => self.refresh_spec().await,
                     Some(Command::Resume) => {}
                 },
                 raw = rx.recv() => match raw {
@@ -672,6 +704,9 @@ impl FolderTask {
     }
 
     async fn handle_ready_path(&mut self, p: PathBuf) {
+        if self.shared.spec_gen.load(Ordering::SeqCst) != self.spec_gen {
+            self.refresh_spec().await;
+        }
         let rules = &self.spec.rules;
         match RealFs.stat(&p) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -747,7 +782,19 @@ impl FolderTask {
         }
     }
 
+    async fn refresh_spec(&mut self) {
+        let gen = self.shared.spec_gen.load(Ordering::SeqCst);
+        if let Ok(spec) =
+            FolderScanSpec::load_for_folder(&self.shared.db, &self.folder, &self.shared.settings())
+                .await
+        {
+            self.spec = spec;
+            self.spec_gen = gen;
+        }
+    }
+
     async fn reconcile_now(&mut self) -> Result<(), AppError> {
+        self.refresh_spec().await;
         let mode = if self.scanned_before {
             ReconcileMode::Diff
         } else {
@@ -826,7 +873,10 @@ impl FolderTask {
                 self.paused = true;
                 Ok(())
             }
-            Flow::Timeout | Flow::Command(Command::Resume | Command::Rescan) => Ok(()),
+            Flow::Timeout
+            | Flow::Command(Command::Resume | Command::Rescan | Command::Recheck | Command::Refresh) => {
+                Ok(())
+            }
         }
     }
 

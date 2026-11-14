@@ -6,12 +6,15 @@
 mod app_state;
 pub mod categories;
 pub mod commands;
+pub mod config_io;
 pub mod database;
+pub mod duplicates;
 pub mod engine;
 pub mod error;
 pub mod events;
 pub mod folders;
 pub mod logging;
+pub mod notifications;
 pub mod onboarding;
 pub mod rules;
 pub mod security;
@@ -34,6 +37,13 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::app::app_info,
             commands::settings::settings_get,
             commands::settings::settings_update,
+            commands::settings::login_item_status,
+            commands::settings::open_login_items_settings,
+            commands::license::license_status,
+            commands::license::license_activate,
+            commands::license::license_activate_offline,
+            commands::license::license_pick_and_activate_offline_file,
+            commands::license::license_deactivate,
             commands::folders::folders_list,
             commands::folders::folders_add_with_picker,
             commands::folders::folders_add_known,
@@ -47,11 +57,19 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::folders::open_privacy_settings,
             commands::monitoring::monitoring_status,
             commands::monitoring::monitoring_set_paused,
-            commands::monitoring::categories_list,
+            commands::categories::categories_list,
+            commands::categories::categories_create,
+            commands::categories::categories_update,
+            commands::categories::categories_delete,
+            commands::categories::categories_set_enabled,
+            commands::categories::categories_reorder,
+            commands::categories::categories_pick_destination_folder,
             commands::rules::rules_list,
             commands::rules::rules_get,
             commands::rules::rules_create,
             commands::rules::rules_create_from_preset,
+            commands::rules::rules_smart_catalog,
+            commands::rules::rules_create_smart_preset,
             commands::rules::rules_update,
             commands::rules::rules_delete,
             commands::rules::rules_reorder,
@@ -74,6 +92,26 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::preview::plan_items,
             commands::preview::plan_execute,
             commands::preview::plan_discard,
+            commands::duplicates::dup_scan,
+            commands::duplicates::dup_groups,
+            commands::duplicates::dup_group_details,
+            commands::duplicates::dup_action,
+            commands::duplicates::dup_export,
+            commands::duplicates::dup_reveal_file,
+            commands::duplicates::dup_pick_review_folder,
+            commands::dashboard::dashboard_stats,
+            commands::dashboard::db_maintenance,
+            commands::exclusions::exclusions_list,
+            commands::exclusions::exclusions_create,
+            commands::exclusions::exclusions_delete,
+            commands::config_io::config_export,
+            commands::config_io::config_pick_import_file,
+            commands::config_io::config_import_preview,
+            commands::config_io::config_import_apply,
+            commands::notifications::notifications_list,
+            commands::notifications::notifications_mark_read,
+            commands::notifications::notifications_clear,
+            commands::notifications::notifications_test,
             commands::schedules::schedules_list,
             commands::schedules::schedules_upsert,
             commands::schedules::schedules_delete,
@@ -87,7 +125,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         ])
         .events(collect_events![
             events::FolderStatusEvent,
-            events::FolderActivityEvent
+            events::FolderActivityEvent,
+            events::DupProgressEvent,
+            events::AppNotificationEvent,
+            events::TrayNavigateEvent
         ])
         .error_handling(ErrorHandlingMode::Result)
 }
@@ -107,16 +148,76 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
-            let state = tauri::async_runtime::block_on(app_state::AppState::init(app.handle()))?;
+            let app_handle = app.handle().clone();
+            let state = tauri::async_runtime::block_on(app_state::AppState::init(&app_handle))?;
+            let current = tauri::async_runtime::block_on(state.settings.get())?;
+            let mon_status = tauri::async_runtime::block_on(state.monitor.status());
+            let busy = state.pipeline.is_busy();
             app.manage(state);
+
+            system::tray::init_tray(
+                &app_handle,
+                current.general.show_menu_bar_icon,
+                &mon_status,
+                busy,
+            )?;
+            if current.general.start_minimized {
+                system::tray::hide_main_window(&app_handle, current.general.show_menu_bar_icon);
+            }
             Ok(())
         })
-        .run(tauri::generate_context!());
+        .on_window_event(|window, event| {
+            system::tray::handle_window_event(window.app_handle(), event);
+        })
+        .build(tauri::generate_context!());
 
-    if let Err(e) = result {
-        // Logging may not be initialised if startup failed early.
-        eprintln!("FolderFlow failed to start: {e}");
-        std::process::exit(1);
+    match result {
+        Ok(app) => {
+            let (sys_tx, mut sys_rx) =
+                tokio::sync::mpsc::unbounded_channel::<system::coordinator::WorkspaceSystemEvent>();
+            let workspace_guard = system::coordinator::start_workspace_observers(move |ev| {
+                let _ = sys_tx.send(ev);
+            });
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some(ev) = sys_rx.recv().await {
+                    let state = handle.state::<app_state::AppState>();
+                    system::coordinator::handle_workspace_event(
+                        ev,
+                        &state.folders,
+                        &state.monitor,
+                        &state.scheduler,
+                    )
+                    .await;
+                    system::tray::refresh_tray_async(handle.clone()).await;
+                }
+            });
+
+            app.run(move |app_handle, event| {
+                let _keep = &workspace_guard;
+                match event {
+                    tauri::RunEvent::Reopen {
+                        has_visible_windows: false,
+                        ..
+                    } => {
+                        system::tray::show_main_window(app_handle, None);
+                    }
+                    tauri::RunEvent::Exit => {
+                        let state = app_handle.state::<app_state::AppState>();
+                        state
+                            .quit_requested
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                        tauri::async_runtime::block_on(state.monitor.shutdown());
+                    }
+                    _ => {}
+                }
+            });
+        }
+        Err(e) => {
+            // Logging may not be initialised if startup failed early.
+            eprintln!("FolderFlow failed to start: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

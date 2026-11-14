@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { rulesService, type Rule, type RuleDraftInput, type RuleTemplate } from "@/services/rules";
+import {
+  rulesService,
+  type Rule,
+  type RuleDraftInput,
+  type RuleTemplate,
+  type SmartOrganizerCatalog,
+  type SmartOrganizerSpec,
+} from "@/services/rules";
 import { toUiError } from "@/services/result";
 import type { UiError } from "@/types/settings";
 
@@ -9,6 +16,7 @@ export type RuleSaveResult = { ok: true; rule: Rule } | { ok: false; error: UiEr
 interface RulesState {
   rules: Rule[];
   presets: RuleTemplate[];
+  smartCatalog: SmartOrganizerCatalog | null;
   status: Status;
   loadError: UiError | null;
   actionError: UiError | null;
@@ -16,6 +24,8 @@ interface RulesState {
   refresh: () => Promise<void>;
   create: (draft: RuleDraftInput) => Promise<RuleSaveResult>;
   createFromPreset: (presetId: string) => Promise<Rule | null>;
+  createSmartPreset: (spec: SmartOrganizerSpec) => Promise<Rule | null>;
+  createSmartPresetResult: (spec: SmartOrganizerSpec) => Promise<RuleSaveResult>;
   update: (id: string, draft: RuleDraftInput) => Promise<RuleSaveResult>;
   remove: (id: string) => Promise<boolean>;
   setEnabled: (id: string, enabled: boolean) => Promise<void>;
@@ -29,6 +39,7 @@ interface RulesState {
 const initial = {
   rules: [] as Rule[],
   presets: [] as RuleTemplate[],
+  smartCatalog: null as SmartOrganizerCatalog | null,
   status: "idle" as Status,
   loadError: null as UiError | null,
   actionError: null as UiError | null,
@@ -60,8 +71,12 @@ export const useRules = create<RulesState>((set, get) => {
     load: async () => {
       set({ status: "loading", loadError: null });
       try {
-        const [rules, presets] = await Promise.all([rulesService.list(), rulesService.presets()]);
-        set({ rules: sortRules(rules), presets, status: "ready" });
+        const [rules, presets, smartCatalog] = await Promise.all([
+          rulesService.list(),
+          rulesService.presets(),
+          rulesService.smartCatalog(),
+        ]);
+        set({ rules: sortRules(rules), presets, smartCatalog, status: "ready" });
       } catch (e) {
         set({ status: "error", loadError: toUiError(e) });
       }
@@ -93,6 +108,25 @@ export const useRules = create<RulesState>((set, get) => {
         upsert(created);
       });
       return created;
+    },
+
+    createSmartPreset: async (spec) => {
+      let created: Rule | null = null;
+      await run(async () => {
+        created = await rulesService.createSmartPreset(spec);
+        upsert(created);
+      });
+      return created;
+    },
+
+    createSmartPresetResult: async (spec) => {
+      try {
+        const rule = await rulesService.createSmartPreset(spec);
+        upsert(rule);
+        return { ok: true, rule };
+      } catch (e) {
+        return { ok: false, error: toUiError(e) };
+      }
     },
 
     update: async (id, draft) => {

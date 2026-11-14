@@ -9,6 +9,7 @@ use tauri::State;
 use crate::app_state::AppState;
 use crate::categories::Category;
 use crate::database::{repo_files, repo_folders, repo_rules, Db};
+use crate::duplicates::cache::hydrate_candidates_for_rules;
 use crate::engine::activity::load_path_authority;
 use crate::engine::classifier::{Classifier, HEADER_BYTES};
 use crate::engine::conflicts::ConflictPolicy;
@@ -16,13 +17,15 @@ use crate::engine::fs_view::{EntryKind, ReadOnlyFs, RealFs};
 use crate::engine::operations::{BatchTrigger, OpKind};
 use crate::engine::paths::nfc;
 use crate::engine::planner::{
-    build_execution_plan, collect_folder_candidates, execute_plan, ExecutionPlan, PlanContext,
+    build_execution_plan, collect_candidates_from_spec, execute_plan, ExecutionPlan, PlanContext,
     PlanEnv, PlanExecutionReport, PlanItemFilter, PlanItemsPage, PlanScope, PlanSummary,
 };
+use crate::engine::reconcile::FolderScanSpec;
 use crate::engine::scanner::ScannedFile;
 use crate::error::{AppError, AppResult, UiError};
 use crate::folders::MonitoredFolder;
-use crate::settings::MonitoringSettings;
+use crate::rules::models::scope_rules;
+use crate::settings::{MonitoringSettings, SettingsService};
 use crate::utils::clock::Clock;
 
 pub(crate) async fn create_preview_plan(
@@ -53,18 +56,32 @@ pub(crate) async fn create_preview_plan(
         .as_ref()
         .map(|paths| paths.iter().map(|p| nfc(std::path::Path::new(p))).collect());
 
+    let mut folder_specs = Vec::with_capacity(folders.len());
+    for folder in folders {
+        let spec = FolderScanSpec::load_for_folder(db, &folder, &monitoring).await?;
+        folder_specs.push((folder.name, spec));
+    }
+
     let cls_scan = classifier.clone();
-    let candidates = tokio::task::spawn_blocking(move || {
+    let mut candidates = tokio::task::spawn_blocking(move || {
         let mut candidates = Vec::new();
-        for folder in &folders {
+        for (folder_name, spec) in folder_specs {
             let mut cands =
-                collect_folder_candidates(folder, &monitoring, &cls_scan, explicit_set.as_ref());
+                collect_candidates_from_spec(&spec, &folder_name, &cls_scan, explicit_set.as_ref());
             candidates.append(&mut cands);
         }
         candidates
     })
     .await
     .map_err(|e| AppError::Internal(format!("preview scan task failed: {e}")))?;
+
+    let scoped_rules = scope_rules(&all_rules, scope.rule_id.as_deref());
+    let hash_on_scan = SettingsService::new(db.clone())
+        .get()
+        .await?
+        .performance
+        .hash_on_scan;
+    hydrate_candidates_for_rules(db, &mut candidates, &scoped_rules, hash_on_scan).await?;
 
     Ok(build_execution_plan(
         &PlanContext {
@@ -178,6 +195,10 @@ pub async fn plan_execute(
     state
         .preview_store
         .prune_executed(&plan_id, selected_item_ids.as_deref(), &report);
+
+    state
+        .notifications
+        .notify_plan_outcome(None, &plan, &report);
 
     Ok(report)
 }
@@ -313,5 +334,76 @@ mod tests {
         assert!(second.completed.is_empty());
         assert!(copy_dst.join("sample_on.txt").exists());
         assert!(!copy_dst.join("sample_on (1).txt").exists());
+    }
+
+    #[tokio::test]
+    async fn bug_027_preview_and_pipeline_evaluate_content_hash_and_duplicate_status_rules() {
+        let (_d, root) = tempdir();
+        let db = database::open_in_memory().await.expect("db");
+        repo_folders::insert(&db, "f1", "Downloads", &root.to_string_lossy(), true)
+            .await
+            .expect("insert folder");
+
+        let dup_payload = b"duplicate-rule-bytes-xyz";
+        let dup_hash = blake3::hash(dup_payload).to_hex().to_string();
+        write_file(&root.join("copy_one.txt"), dup_payload);
+        write_file(&root.join("copy_two.txt"), dup_payload);
+        write_file(&root.join("unique.txt"), b"totally-distinct-file");
+
+        let hash_dst = root.join("ByHash");
+        let dup_rule = Rule {
+            id: "r-dup".into(),
+            name: "Move Exact Hash & Duplicate".into(),
+            description: None,
+            enabled: true,
+            priority: 1,
+            source_folders: Vec::new(),
+            conditions: ConditionNode::All {
+                children: vec![
+                    ConditionNode::Leaf {
+                        condition: Condition::DuplicateStatus { is_duplicate: true },
+                    },
+                    ConditionNode::Leaf {
+                        condition: Condition::ContentHash { hash: dup_hash },
+                    },
+                ],
+            },
+            actions: vec![Action::Copy {
+                destination: hash_dst.to_string_lossy().into_owned(),
+            }],
+            date_source: DateSource::Modified,
+            execution_mode: ExecutionMode::FirstMatch,
+            origin: RuleOrigin::User,
+            last_run_at: None,
+            stat_matched: 0,
+            stat_succeeded: 0,
+            stat_failed: 0,
+            created_at: 1_700_000_000_000,
+            updated_at: 1_700_000_000_000,
+        };
+        repo_rules::insert(&db, &dup_rule).await.expect("insert");
+
+        let clock = FixedClock::utc(1_700_000_000_000);
+        let plan = create_preview_plan(
+            &db,
+            builtin_categories(),
+            MonitoringSettings::default(),
+            &clock,
+            &PlanScope::default(),
+        )
+        .await
+        .expect("plan");
+
+        let names: Vec<_> = plan
+            .items
+            .iter()
+            .map(|i| i.original_name.as_str())
+            .collect();
+        assert_eq!(
+            names.len(),
+            2,
+            "BUG-027: ContentHash + DuplicateStatus rule must match both duplicates (got {names:?})"
+        );
+        assert!(!names.contains(&"unique.txt"));
     }
 }

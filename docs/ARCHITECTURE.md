@@ -85,13 +85,13 @@ folderflow/
 │   │   ├── onboarding/        6-step onboarding state + non-mutating scan preview             [P5]
 │   │   ├── system/            macOS integration via objc2 (System Settings link)             [P2]
 │   │   ├── events.rs          typed events + TauriObserver + CompositeObserver                 [P2/P5]
-│   │   ├── rules/ models.rs conditions.rs evaluator.rs templates.rs validate.rs presets.rs service.rs [P3]
-│   │   ├── duplicates/ hasher.rs cache.rs finder.rs
-│   │   ├── database/ pool.rs repo_*.rs
-│   │   ├── notifications/ service.rs throttle.rs
+│   │   ├── rules/ models.rs conditions.rs evaluator.rs templates.rs validate.rs presets.rs smart.rs service.rs [P3/P6]
+│   │   ├── duplicates/ hasher.rs cache.rs finder.rs actions.rs                            [P6]
+│   │   ├── database/ pool.rs repo_*.rs                                                   [P1–P6]
+│   │   ├── notifications/ mod.rs service.rs                                              [P6]
 │   │   ├── security/ capabilities.rs license.rs keychain.rs
 │   │   ├── system/ tray.rs login_item.rs power.rs volumes.rs
-│   │   ├── config_io/ export.rs import.rs schema.rs
+│   │   ├── config_io/ export.rs import.rs schema.rs                                      [P6]
 │   │   └── utils/ time.rs clock.rs                                                               [P3]
 │   ├── migrations/0001_init.sql …
 │   ├── capabilities/default.json
@@ -165,8 +165,9 @@ All commands are `async`, return `Result<T, UiError>`, and are exported to TS vi
 | | `open_privacy_settings` | → `bool` (fixed System Settings URL via NSWorkspace) |
 | monitoring | `monitoring_status` | → `MonitoringStatus { paused, folders: [FolderRuntime] }` |
 | | `monitoring_set_paused` | `paused` → `MonitoringStatus` |
-| categories | `categories_list` | → `Vec<Category>` (create/update/delete/set_enabled ship with P6-T08) |
+| categories | `categories_list/create/update/delete/set_enabled/reorder/pick_destination_folder` | built-in + custom category CRUD, ordering, destination folder picker [P2/P6] |
 | rules | `rules_list/get/create/create_from_preset/update/delete/reorder/set_enabled/duplicate` | CRUD, priority reorder, duplicate, preset install |
+| | `rules_smart_catalog` / `rules_create_smart_preset` | Smart Organizer template catalog & disabled preset installation [P6] |
 | | `rules_validate` | `(RuleDraft, current_rule_id)` → `Vec<ValidationIssue>` |
 | | `rules_presets` | → `Vec<RuleTemplate>` (7 starter templates, all disabled) |
 | | `template_preview` | `TemplatePreviewInput` → `TemplatePreviewOutput` |
@@ -181,10 +182,12 @@ All commands are `async`, return `Result<T, UiError>`, and are exported to TS vi
 | | `activity_retry` / `activity_export_csv` / `activity_clear` | |
 | | `reveal_in_finder` | `op_id, which: Source\|Destination` (path resolved in Rust) |
 | review | `review_list` / `review_resolve` | conflicts in "ask" mode |
-| duplicates | `dup_scan` / `dup_groups` / `dup_action` / `dup_export` | |
+| duplicates | `dup_scan/groups/group_details/action/export/reveal_file/pick_review_folder` | duplicate discovery, grouping, keeper, undoable review move w/ exclusion, trash, export [P6] |
 | schedules | `schedules_list/upsert/delete/set_enabled/run_now` | SQLite schedules, toggle, manual run (`ScheduleRunOutcome`) |
-| dashboard | `dashboard_stats` | → `DashboardStats` |
-| config | `config_export` / `config_import_preview` / `config_import_apply` | |
+| dashboard | `dashboard_stats` / `db_maintenance` | SQLite stats aggregation & `ANALYZE`/`VACUUM` maintenance [P6] |
+| exclusions | `exclusions_list/create/delete` | global & per-folder `path`/`glob`/`extension` exclusion rules [P6] |
+| config | `config_export/pick_import_file/import_preview/import_apply` | versioned JSON export, dry-run diff preview, merge/replace import [P6] |
+| notifications | `notifications_list/mark_read/clear/test` | batched/throttled notification center history & test dispatch [P6] |
 | license | `license_status/activate/activate_offline/deactivate` | |
 | onboarding | `onboarding_state` / `onboarding_set_step` / `onboarding_scan_preview` / `onboarding_complete` / `onboarding_reset` | persistent wizard state + non-mutating starter scan |
 
@@ -196,12 +199,13 @@ The frontend never receives a raw "move this path to that path" command. It only
 |---|---|
 | `folder-status-event` ✅ | `FolderRuntime` — emitted on every folder state change |
 | `folder-activity-event` ✅ | `{folderId, kind: stable\|removed}` — no paths; UI refetches (debounced) |
+| `dup-progress-event` ✅ | `DupProgressEvent` — progress updates during duplicate scanning |
+| `app-notification-event` ✅ | `AppNotificationEvent` — batched/throttled notification delivery |
 | `scan://progress` | `{folder_id, files, bytes, done}` (planned) |
 | `plan://progress` | `{plan_id, evaluated, total}` |
 | `batch://progress` | `{batch_id, done, failed, total}` |
 | `activity://new` | `OperationView` |
 | `review://new` | `ReviewItem` |
-| `dup://progress` | `{hashed, total, bytes}` |
 
 ## 7. Frontend
 
@@ -210,17 +214,17 @@ The frontend never receives a raw "move this path to that path" command. It only
 | Path | Page | Notes |
 |---|---|---|
 | `/onboarding`, `/onboarding/:step` | Onboarding ✅ | 6-step setup flow when `onboarding_state.completed == false` |
-| `/` | Overview | dashboard (until it ships, `/` redirects to the first available screen) |
+| `/overview` (and `/` redirect) | Overview ✅ | real SQLite dashboard stats, category storage breakdown, trend charts, active folder summary |
 | `/folders`, `/folders/:id` | Folders ✅ | list + detail (status, overview by category, settings form, recent problems) |
-| `/rules` | Rules ✅ | priority-ordered list, starter preset menu, enable toggle, reorder, duplicate, delete |
+| `/rules` | Rules ✅ | priority-ordered list, starter preset & Smart Organizer menus, enable toggle, reorder, duplicate, delete |
 | `/rules/new`, `/rules/:id` | RuleBuilder ✅ | nested condition tree editor, actions list, live validation, template preview, dry-run folder test |
 | `/preview` | Preview ✅ | scope/filter dry-run plan, conflict checks, selective execution w/ ⌘↩ confirmation |
 | `/activity` | Activity ✅ | paginated operation ledger, filters, undo last/selected/row/batch, conflict resolution (`Needs Review`), retry, CSV export, clear history, reveal in Finder |
-| `/duplicates` | Duplicates | |
+| `/duplicates` | Duplicates ✅ | duplicate scan, wasted-space summary, keeper/review/trash/ignore actions, CSV/JSON export, review folder config |
 | `/scheduler` | Scheduler ✅ | interval/daily/weekly/launch/manual schedules, quiet hours, catch-up policy, run now |
-| `/categories` | Categories | |
-| `/settings/:section` | Settings | general ✅, appearance ✅, about ✅ (monitoring, organization, performance, privacy, backup pending) |
-| `/license` | License | |
+| `/categories` | Categories ✅ | built-in & custom categories, extension/color editor, reorder, default destination picker |
+| `/settings/:section` | Settings ✅ | general, appearance, monitoring, organization, performance, notifications, privacy (exclusions), backup, about |
+| `/license` | License | planned (Phase 8/9) |
 
 ### Shared components (all styled by theme tokens only)
 
@@ -228,7 +232,7 @@ The frontend never receives a raw "move this path to that path" command. It only
 
 ### State
 
-- Zustand stores: `useUi` (theme, density, sidebar), `useMonitoring`, `useFolders`, `useRules`, `usePreview`, `useActivity`, `useSchedules`, `useOnboarding`, `useSettings`. Stores call `services/*` which call generated bindings. Event listeners update stores.
+- Zustand stores: `useUi` (theme, density, sidebar), `useMonitoring`, `useDashboard`, `useFolders`, `useRules`, `usePreview`, `useActivity`, `useDuplicates`, `useCategories`, `useSchedules`, `useOnboarding`, `useSettings`. Stores call `services/*` which call generated bindings. Event listeners update stores.
 - No business logic in stores — only caching and UI state.
 - Stores that save optimistically must never roll back to a locally remembered state on failure; they re-read from Rust (BUG-004).
 

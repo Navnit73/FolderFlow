@@ -1,7 +1,6 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::app_state::AppState;
-use crate::categories::Category;
 use crate::engine::monitor::MonitoringStatus;
 use crate::error::UiError;
 
@@ -15,6 +14,7 @@ pub async fn monitoring_status(state: State<'_, AppState>) -> Result<MonitoringS
 #[tauri::command]
 #[specta::specta]
 pub async fn monitoring_set_paused(
+    app: AppHandle,
     state: State<'_, AppState>,
     paused: bool,
 ) -> Result<MonitoringStatus, UiError> {
@@ -24,11 +24,6 @@ pub async fn monitoring_set_paused(
     } else {
         state.monitor.resume_all().await;
     }
+    crate::system::tray::refresh_tray_async(app).await;
     Ok(state.monitor.status().await)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn categories_list(state: State<'_, AppState>) -> Result<Vec<Category>, UiError> {
-    Ok(state.categories.list().await?)
 }

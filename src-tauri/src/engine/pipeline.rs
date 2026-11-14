@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, Mutex, Notify};
 use crate::database::repo_operations::OperationView;
 use crate::database::repo_schedules::{Schedule, ScheduleType};
 use crate::database::{repo_files, repo_folders, repo_rules, repo_schedules, Db};
+use crate::duplicates::cache::hydrate_candidates_for_rules;
 use crate::engine::classifier::{Classifier, HEADER_BYTES};
 use crate::engine::conflicts::ConflictPolicy;
 use crate::engine::fs_view::{EntryKind, ReadOnlyFs, RealFs};
@@ -30,6 +31,7 @@ use crate::engine::reconcile::FolderScanSpec;
 use crate::engine::scanner::{scan, ScanOptions, ScannedFile};
 use crate::engine::scheduler::is_in_quiet_hours;
 use crate::error::{AppError, AppResult};
+use crate::notifications::NotificationService;
 use crate::settings::SettingsService;
 
 pub const DEFAULT_PIPELINE_QUEUE_CAPACITY: usize = 4096;
@@ -59,15 +61,25 @@ pub enum PipelineStepOutcome {
 pub struct AutomationPipeline {
     db: Db,
     organizer: Organizer,
-    classifier: Arc<Classifier>,
+    classifier: Arc<RwLock<Arc<Classifier>>>,
     authority: Arc<RwLock<PathAuthority>>,
-    conflict_policy: ConflictPolicy,
+    conflict_policy: Arc<RwLock<ConflictPolicy>>,
+    notifier: Arc<RwLock<Option<Arc<NotificationService>>>>,
     paused: Arc<AtomicBool>,
     tx: mpsc::Sender<PipelineEvent>,
     rx: Arc<Mutex<mpsc::Receiver<PipelineEvent>>>,
     dirty_folders: Arc<std::sync::Mutex<HashSet<String>>>,
     dropped_overflow: Arc<AtomicU64>,
+    busy_count: Arc<AtomicU64>,
     notify: Arc<Notify>,
+}
+
+struct BusyGuard(Arc<AtomicU64>);
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl AutomationPipeline {
@@ -83,16 +95,27 @@ impl AutomationPipeline {
         Self {
             db,
             organizer,
-            classifier,
+            classifier: Arc::new(RwLock::new(classifier)),
             authority: Arc::new(RwLock::new(authority)),
-            conflict_policy: ConflictPolicy::AutoRename,
+            conflict_policy: Arc::new(RwLock::new(ConflictPolicy::AutoRename)),
+            notifier: Arc::new(RwLock::new(None)),
             paused: Arc::new(AtomicBool::new(false)),
             tx,
             rx: Arc::new(Mutex::new(rx)),
             dirty_folders: Arc::new(std::sync::Mutex::new(HashSet::new())),
             dropped_overflow: Arc::new(AtomicU64::new(0)),
+            busy_count: Arc::new(AtomicU64::new(0)),
             notify: Arc::new(Notify::new()),
         }
+    }
+
+    pub fn is_busy(&self) -> bool {
+        self.busy_count.load(Ordering::Acquire) > 0
+    }
+
+    fn enter_busy(&self) -> BusyGuard {
+        self.busy_count.fetch_add(1, Ordering::AcqRel);
+        BusyGuard(self.busy_count.clone())
     }
 
     pub async fn notified(&self) {
@@ -110,6 +133,45 @@ impl AutomationPipeline {
     pub fn set_authority(&self, authority: PathAuthority) {
         let mut guard = self.authority.write().unwrap_or_else(|e| e.into_inner());
         *guard = authority;
+    }
+
+    pub fn set_classifier(&self, classifier: Arc<Classifier>) {
+        let mut guard = self.classifier.write().unwrap_or_else(|e| e.into_inner());
+        *guard = classifier;
+    }
+
+    pub fn set_conflict_policy(&self, policy: ConflictPolicy) {
+        let mut guard = self
+            .conflict_policy
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        *guard = policy;
+    }
+
+    pub fn set_notifier(&self, notifier: Arc<NotificationService>) {
+        let mut guard = self.notifier.write().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(notifier);
+    }
+
+    fn current_classifier(&self) -> Arc<Classifier> {
+        self.classifier
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    fn current_conflict_policy(&self) -> ConflictPolicy {
+        *self
+            .conflict_policy
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn current_notifier(&self) -> Option<Arc<NotificationService>> {
+        self.notifier
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn dropped_overflow_count(&self) -> u64 {
@@ -202,13 +264,27 @@ impl AutomationPipeline {
             return Ok(PipelineStepOutcome::NoMatch);
         }
 
+        let app_settings = SettingsService::new(self.db.clone()).get().await?;
+        let spec =
+            FolderScanSpec::load_for_folder(&self.db, &folder, &app_settings.monitoring).await?;
+        if spec.rules.is_path_excluded(
+            &spec.path,
+            &file.facts.path,
+            &file.facts.name,
+            file.facts.extension.as_deref(),
+            file.facts.is_hidden,
+            file.facts.kind == EntryKind::Package,
+        ) {
+            return Ok(PipelineStepOutcome::NoMatch);
+        }
+
         let authority = self
             .authority
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
 
-        let cand = PlanCandidate {
+        let mut cand = PlanCandidate {
             folder_id: folder.id.clone(),
             folder_path: PathBuf::from(&folder.path),
             folder_name: folder.name.clone(),
@@ -218,12 +294,21 @@ impl AutomationPipeline {
             content_hash: None,
             is_duplicate: false,
         };
+        hydrate_candidates_for_rules(
+            &self.db,
+            std::slice::from_mut(&mut cand),
+            &rules,
+            app_settings.performance.hash_on_scan,
+        )
+        .await?;
 
+        let classifier = self.current_classifier();
+        let conflict_policy = self.current_conflict_policy();
         let plan = build_execution_plan(
             &PlanContext {
                 fs: &RealFs,
                 authority: &authority,
-                classifier: &self.classifier,
+                classifier: &classifier,
                 clock: self.organizer.clock().as_ref(),
             },
             &rules,
@@ -243,12 +328,16 @@ impl AutomationPipeline {
         let rep = execute_plan(
             &plan,
             None,
-            self.conflict_policy,
+            conflict_policy,
             &self.organizer,
             &authority,
             trigger,
         )
         .await?;
+
+        if let Some(notifier) = self.current_notifier() {
+            notifier.notify_plan_outcome(Some(folder.id.clone()), &plan, &rep);
+        }
 
         let folder_root_nfc = nfc(Path::new(&folder.path));
         for op in &rep.completed {
@@ -264,9 +353,7 @@ impl AutomationPipeline {
                     } else {
                         RealFs.read_header(dst_path, HEADER_BYTES).ok()
                     };
-                    let cls = self
-                        .classifier
-                        .classify(&meta.name, header.as_deref(), is_pkg);
+                    let cls = classifier.classify(&meta.name, header.as_deref(), is_pkg);
                     let new_sf = ScannedFile {
                         facts: meta,
                         category: cls.category,
@@ -298,6 +385,7 @@ impl AutomationPipeline {
 
     /// Drains all currently queued events and reconciles any folders marked dirty by overflow.
     pub async fn drain_and_reconcile(&self) -> AppResult<Vec<PipelineStepOutcome>> {
+        let _busy = self.enter_busy();
         let mut drained = Vec::new();
         {
             let mut rx = self.rx.lock().await;
@@ -335,8 +423,8 @@ impl AutomationPipeline {
                 if !folder.enabled {
                     continue;
                 }
-                let spec = FolderScanSpec::from_folder(&folder, &monitoring);
-                let cls = self.classifier.clone();
+                let spec = FolderScanSpec::load_for_folder(&self.db, &folder, &monitoring).await?;
+                let cls = self.current_classifier();
                 let scanned_files = tokio::task::spawn_blocking(move || {
                     let opts = ScanOptions {
                         recursive: spec.recursive,
@@ -789,6 +877,246 @@ mod tests {
                     [PipelineStepOutcome::Organized(_)]
                 ),
             "BUG-023b: realtime pipeline must pause during quiet_hours; got {quiet_outcomes:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn bug_026_exclusions_glob_extension_and_review_path_respected_across_scans() {
+        use crate::database::repo_exclusions::{self, ExclusionInput, ExclusionKind};
+
+        let (_d, root) = tempdir();
+        let (pipe, db, folder_id) = setup_pipeline(&root, 64).await;
+        let review_dir = root.join("Duplicate Review");
+        crate::test_support::mkdir(&review_dir);
+
+        // Catch-all rule that would move any allowed file into Sorted/.
+        insert_rule(
+            &db,
+            "r-all",
+            "Sort All",
+            true,
+            ConditionNode::Leaf {
+                condition: Condition::Hidden { is_hidden: false },
+            },
+            vec![Action::Move {
+                destination: root.join("Sorted").to_string_lossy().into_owned(),
+            }],
+        )
+        .await;
+
+        repo_exclusions::create(
+            &db,
+            ExclusionInput {
+                folder_id: None,
+                path: "keep-*.txt".into(),
+                exclusion_type: ExclusionKind::Glob,
+            },
+        )
+        .await
+        .expect("glob excl");
+        repo_exclusions::create(
+            &db,
+            ExclusionInput {
+                folder_id: None,
+                path: "bak".into(),
+                exclusion_type: ExclusionKind::Extension,
+            },
+        )
+        .await
+        .expect("ext excl");
+        repo_exclusions::create(
+            &db,
+            ExclusionInput {
+                folder_id: Some(folder_id.clone()),
+                path: review_dir.to_string_lossy().into_owned(),
+                exclusion_type: ExclusionKind::Path,
+            },
+        )
+        .await
+        .expect("review path excl");
+
+        let f_glob = root.join("keep-note.txt");
+        let f_ext = root.join("backup.bak");
+        let f_review = review_dir.join("dup.txt");
+        let f_allowed = root.join("process-me.txt");
+        write_file(&f_glob, b"glob");
+        write_file(&f_ext, b"ext");
+        write_file(&f_review, b"rev");
+        write_file(&f_allowed, b"ok");
+
+        for p in [&f_glob, &f_ext, &f_review, &f_allowed] {
+            pipe.enqueue(&folder_id, scanned_file_for(p, "documents"));
+        }
+        let _ = pipe.drain_and_reconcile().await.expect("drain");
+
+        assert!(
+            f_glob.exists(),
+            "BUG-026: global glob exclusion must prevent live pipeline move"
+        );
+        assert!(
+            f_ext.exists(),
+            "BUG-026: global extension exclusion must prevent live pipeline move"
+        );
+        assert!(
+            f_review.exists(),
+            "BUG-026: excluded Duplicate Review folder must never be re-organized"
+        );
+        assert!(root.join("Sorted/process-me.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn bug_027_pipeline_evaluates_content_hash_duplicate_status_and_hash_on_scan() {
+        let (_d, root) = tempdir();
+        let (pipe, db, folder_id) = setup_pipeline(&root, 64).await;
+
+        let settings_svc = SettingsService::new(db.clone());
+        let mut settings = settings_svc.get().await.expect("settings");
+        settings.performance.hash_on_scan = true;
+        settings_svc.update(settings).await.expect("update");
+
+        let payload = b"shared-payload-for-bug-027-pipeline";
+        let expected_hash = blake3::hash(payload).to_hex().to_string();
+
+        // First file enters & is tracked in file_records; hash_on_scan caches its content_hash.
+        let orig = root.join("orig.bin");
+        write_file(&orig, payload);
+        let orig_sf = scanned_file_for(&orig, "other");
+        repo_files::upsert_batch(&db, &folder_id, std::slice::from_ref(&orig_sf), 1_000)
+            .await
+            .expect("upsert orig");
+
+        insert_rule(
+            &db,
+            "r-dup-hash",
+            "Duplicates by Hash",
+            true,
+            ConditionNode::All {
+                children: vec![
+                    ConditionNode::Leaf {
+                        condition: Condition::DuplicateStatus { is_duplicate: true },
+                    },
+                    ConditionNode::Leaf {
+                        condition: Condition::ContentHash {
+                            hash: expected_hash.clone(),
+                        },
+                    },
+                ],
+            },
+            vec![Action::Move {
+                destination: root.join("Duplicates").to_string_lossy().into_owned(),
+            }],
+        )
+        .await;
+
+        // Unique file is NOT a duplicate and has a different hash -> stays put, but hash_on_scan caches its hash.
+        let unique = root.join("unique.bin");
+        write_file(&unique, b"different-unique-bytes");
+        let unique_sf = scanned_file_for(&unique, "other");
+        repo_files::upsert_batch(&db, &folder_id, std::slice::from_ref(&unique_sf), 1_500)
+            .await
+            .expect("upsert unique");
+        let unique_outcome = pipe
+            .process_file(&folder_id, &unique_sf, BatchTrigger::Realtime)
+            .await
+            .expect("process unique");
+        assert!(matches!(unique_outcome, PipelineStepOutcome::NoMatch));
+        let unique_rec =
+            repo_files::get_hash_record_by_path(&db, unique.to_string_lossy().as_ref())
+                .await
+                .expect("rec")
+                .expect("exists");
+        assert_eq!(
+            unique_rec.content_hash.as_deref(),
+            Some(blake3::hash(b"different-unique-bytes").to_hex().as_str()),
+            "BUG-027: hash_on_scan must populate cached hash even when rule does not match"
+        );
+
+        // Arriving copy with identical payload matches both DuplicateStatus + ContentHash against tracked orig.bin.
+        let dup = root.join("copy.bin");
+        write_file(&dup, payload);
+        pipe.enqueue(&folder_id, scanned_file_for(&dup, "other"));
+        let _ = pipe.drain_and_reconcile().await.expect("drain");
+
+        assert!(
+            root.join("Duplicates/copy.bin").exists() && !dup.exists(),
+            "BUG-027: live pipeline must hydrate ContentHash and DuplicateStatus for arriving files"
+        );
+        assert!(unique.exists(), "unique.bin must remain untouched");
+    }
+
+    #[tokio::test]
+    async fn bug_032_unmounted_destination_emits_destination_unavailable_notification() {
+        use crate::notifications::{
+            NotificationConfig, NotificationKind, NotificationService, RecordingNotificationSink,
+        };
+
+        let (_d, root) = tempdir();
+        let src_dir = root.join("Source");
+        std::fs::create_dir_all(&src_dir).expect("mkdir src");
+        let unmounted_vol = root.join("Volumes").join("ExternalSSD");
+        // Note: `unmounted_vol` does NOT exist on disk (simulates unmounted external drive)
+        // while `ApprovedRoot` still has it registered.
+
+        let db = database::open_in_memory().await.expect("db");
+        let folder_id = "folder-dl".to_owned();
+        repo_folders::insert(&db, &folder_id, "Source", &src_dir.to_string_lossy(), true)
+            .await
+            .expect("insert folder");
+
+        let ledger = Ledger::new(db.clone());
+        let fs = Arc::new(SafeFs::with_trash_dir(root.join(".Trash")));
+        let clock = Arc::new(FixedClock::utc(1_700_000_000_000));
+        let org = Organizer::new(ledger, fs, clock.clone());
+        let cls = Arc::new(Classifier::new(builtin_categories()));
+        let auth = PathAuthority::new(vec![
+            ApprovedRoot {
+                path: src_dir.clone(),
+                kind: RootKind::Monitored,
+            },
+            ApprovedRoot {
+                path: unmounted_vol.clone(),
+                kind: RootKind::Destination,
+            },
+        ]);
+        let pipe = AutomationPipeline::new(db.clone(), org, cls, auth, 64);
+
+        let sink = Arc::new(RecordingNotificationSink::default());
+        let mut cfg = NotificationConfig::default();
+        cfg.settings.batch_window_secs = 0;
+        cfg.settings.cooldown_secs = 0;
+        let notif = Arc::new(NotificationService::new(clock, sink.clone(), cfg));
+        pipe.set_notifier(notif);
+
+        insert_rule(
+            &db,
+            "r-ext",
+            "Move to External",
+            true,
+            ConditionNode::Leaf {
+                condition: Condition::Text {
+                    field: TextFieldKind::Extension,
+                    op: TextOp::Equals,
+                    value: "pdf".into(),
+                    case_sensitive: false,
+                },
+            },
+            vec![Action::Move {
+                destination: unmounted_vol.join("Archive").to_string_lossy().into_owned(),
+            }],
+        )
+        .await;
+
+        let f = src_dir.join("tax.pdf");
+        write_file(&f, b"%PDF-1.7");
+        pipe.enqueue(&folder_id, scanned_file_for(&f, "documents"));
+        let _ = pipe.drain_and_reconcile().await.expect("drain");
+
+        let delivered = sink.records();
+        assert!(
+            delivered
+                .iter()
+                .any(|r| r.kind == NotificationKind::DestinationUnavailable),
+            "BUG-032: missing/unmounted destination root must emit DestinationUnavailable notification, got {delivered:?}"
         );
     }
 }

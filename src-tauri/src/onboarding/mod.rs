@@ -171,6 +171,11 @@ impl OnboardingService {
             .get()
             .await?
             .monitoring;
+        let mut folder_specs = Vec::with_capacity(folders.len());
+        for folder in folders {
+            let spec = FolderScanSpec::load_for_folder(&self.db, &folder, &monitoring).await?;
+            folder_specs.push((folder, spec));
+        }
 
         let cls_scan = classifier.clone();
         let (folders_scanned, total_files, total_folders, total_bytes, cat_totals, candidates) =
@@ -182,20 +187,20 @@ impl OnboardingService {
                 let mut cat_totals: BTreeMap<String, (u32, u64)> = BTreeMap::new();
                 let mut candidates: Vec<PlanCandidate> = Vec::new();
 
-                for folder in &folders {
-                    let spec = FolderScanSpec::from_folder(folder, &monitoring);
+                for (folder, spec) in folder_specs {
+                    let folder_path = spec.path.clone();
                     let opts = ScanOptions {
                         recursive: spec.recursive,
                         rules: spec.rules,
                     };
-                    if let Ok(summary) = scan(&spec.path, &opts, &cls_scan, |batch| {
+                    if let Ok(summary) = scan(&folder_path, &opts, &cls_scan, |batch| {
                         for sf in batch {
                             let e = cat_totals.entry(sf.category.clone()).or_insert((0, 0));
                             e.0 = e.0.saturating_add(1);
                             e.1 = e.1.saturating_add(sf.facts.size);
                             candidates.push(PlanCandidate {
                                 folder_id: folder.id.clone(),
-                                folder_path: spec.path.clone(),
+                                folder_path: folder_path.clone(),
                                 folder_name: folder.name.clone(),
                                 path: sf.facts.path,
                                 category_hint: Some(sf.category),

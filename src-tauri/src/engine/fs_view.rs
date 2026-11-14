@@ -65,11 +65,17 @@ pub struct FileFacts {
     pub is_hidden: bool,
 }
 
+/// Seekable, read-only stream returned by [`ReadOnlyFs::open_read`].
+pub trait ReadSeek: std::io::Read + std::io::Seek + Send {}
+impl<T: std::io::Read + std::io::Seek + Send> ReadSeek for T {}
+
 pub trait ReadOnlyFs: Send + Sync {
     /// Metadata without following a symlink leaf.
     fn stat(&self, path: &Path) -> std::io::Result<FileFacts>;
     /// Up to `max` bytes from the start of a regular file (no symlink follow, non-blocking open).
     fn read_header(&self, path: &Path, max: usize) -> std::io::Result<Vec<u8>>;
+    /// Opens a regular file read-only without following a symlink leaf (`O_NOFOLLOW | O_NONBLOCK`).
+    fn open_read(&self, path: &Path) -> std::io::Result<Box<dyn ReadSeek>>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -125,6 +131,20 @@ pub fn facts_from_metadata(path: &Path, meta: &Metadata) -> FileFacts {
     }
 }
 
+fn open_regular_file(path: &Path) -> std::io::Result<std::fs::File> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
 impl ReadOnlyFs for RealFs {
     fn stat(&self, path: &Path) -> std::io::Result<FileFacts> {
         let meta = std::fs::symlink_metadata(path)?;
@@ -132,19 +152,14 @@ impl ReadOnlyFs for RealFs {
     }
 
     fn read_header(&self, path: &Path, max: usize) -> std::io::Result<Vec<u8>> {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(path)?;
-        if !file.metadata()?.is_file() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "not a regular file",
-            ));
-        }
+        let file = open_regular_file(path)?;
         let mut buf = Vec::with_capacity(max.min(8192));
         file.take(max as u64).read_to_end(&mut buf)?;
         Ok(buf)
+    }
+
+    fn open_read(&self, path: &Path) -> std::io::Result<Box<dyn ReadSeek>> {
+        Ok(Box::new(open_regular_file(path)?))
     }
 }
 

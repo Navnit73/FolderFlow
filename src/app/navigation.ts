@@ -4,6 +4,7 @@ import {
   Copy,
   Eye,
   FolderOpen,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   Settings,
@@ -22,15 +23,16 @@ export interface NavItem {
 
 /** Sidebar order per docs/DESIGN_SYSTEM.md §5. Flip `available` when a screen ships. */
 export const NAV_ITEMS: NavItem[] = [
-  { id: "overview", label: "Overview", path: "/overview", icon: LayoutDashboard, available: false },
+  { id: "overview", label: "Overview", path: "/overview", icon: LayoutDashboard, available: true },
   { id: "folders", label: "Folders", path: "/folders", icon: FolderOpen, available: true },
   { id: "rules", label: "Rules", path: "/rules", icon: ListChecks, available: true },
   { id: "preview", label: "Preview", path: "/preview", icon: Eye, available: true },
   { id: "activity", label: "Activity", path: "/activity", icon: Activity, available: true },
-  { id: "duplicates", label: "Duplicates", path: "/duplicates", icon: Copy, available: false },
+  { id: "duplicates", label: "Duplicates", path: "/duplicates", icon: Copy, available: true },
   { id: "scheduler", label: "Scheduler", path: "/scheduler", icon: CalendarClock, available: true },
-  { id: "categories", label: "Categories", path: "/categories", icon: Tags, available: false },
+  { id: "categories", label: "Categories", path: "/categories", icon: Tags, available: true },
   { id: "settings", label: "Settings", path: "/settings", icon: Settings, available: true },
+  { id: "license", label: "License", path: "/license", icon: KeyRound, available: true },
 ];
 
 export function defaultPath(): string {

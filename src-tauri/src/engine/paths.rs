@@ -144,7 +144,16 @@ pub fn validate_new_root(path: &Path, policy: &RootPolicy) -> Result<PathBuf, Pa
         return Err(PathError::NotADirectory);
     }
     let canon = nfc(&path.canonicalize()?);
+    check_not_forbidden_root(&canon, policy)
+}
+
+/// Validates lexical safety and verifies `path` is not a protected macOS system folder,
+/// user's home root, Library, or FolderFlow's own app-data directory. Works even if `path`
+/// does not yet exist on disk.
+pub fn check_not_forbidden_root(path: &Path, policy: &RootPolicy) -> Result<PathBuf, PathError> {
+    lexical_check(path)?;
     let canon_or = |p: &Path| nfc(&p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
+    let canon = canon_or(path);
     let home = canon_or(&policy.home);
     let app_data = canon_or(&policy.app_data_dir);
 
@@ -193,10 +202,15 @@ pub fn validate_new_root(path: &Path, policy: &RootPolicy) -> Result<PathBuf, Pa
 
 /// NFC-normalises a path. FolderFlow stores and compares paths in NFC.
 pub fn nfc(p: &Path) -> PathBuf {
-    PathBuf::from(p.to_string_lossy().nfc().collect::<String>())
+    PathBuf::from(nfc_str(&p.to_string_lossy()))
 }
 
-fn lexical_check(path: &Path) -> Result<(), PathError> {
+/// NFC-normalises a string slice (APFS stores decomposed NFD names).
+pub fn nfc_str(s: &str) -> String {
+    s.nfc().collect()
+}
+
+pub fn lexical_check(path: &Path) -> Result<(), PathError> {
     if !path.is_absolute() {
         return Err(PathError::NotAbsolute);
     }

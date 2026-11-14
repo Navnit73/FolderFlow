@@ -358,3 +358,59 @@ describe("UI-RB-06 live template preview and test rule on folder (FR-057)", () =
     expect(screen.getByText("2026-04-15_inv_01.pdf")).toBeInTheDocument();
   });
 });
+
+describe("UI-SMART-01 smart organizer generator modal (FR-150..153)", () => {
+  it("opens Smart organizers dialog, builds an old-files rule via rulesCreateSmartPreset, and keeps it disabled", async () => {
+    const smartRule = ruleFixture({
+      id: "r-smart-old",
+      name: "Archive old files (60+ days)",
+      enabled: false,
+      origin: "preset",
+    });
+    commands.rulesCreateSmartPreset.mockResolvedValueOnce(ok(smartRule));
+
+    await renderAt("/rules");
+    await userEvent.click(screen.getByRole("button", { name: /Smart organizers/i }));
+    expect(await screen.findByRole("heading", { name: "Smart Organizers" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Old files archive/i }));
+    await userEvent.selectOptions(screen.getByLabelText(/Archive files untouched for at least/i), "60");
+    await userEvent.click(screen.getByRole("button", { name: "Create disabled rule" }));
+
+    expect(commands.rulesCreateSmartPreset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "old_files",
+        days: 60,
+      }),
+    );
+    expect(await screen.findByText("Archive old files (60+ days)")).toBeInTheDocument();
+    const row = screen.getByRole("row", { name: /Archive old files \(60\+ days\)/i });
+    expect(row.querySelector("[role='switch'][aria-checked='false']")).not.toBeNull();
+  });
+
+  it("BUG-033: keeps SmartOrganizerDialog open with inline error if creation fails and closes on Escape", async () => {
+    commands.rulesCreateSmartPreset.mockResolvedValueOnce({
+      status: "error",
+      error: {
+        code: "validation",
+        message: "Provide at least one invoice keyword.",
+        hint: null,
+        field: "keywords",
+      },
+    });
+
+    await renderAt("/rules");
+    await userEvent.click(screen.getByRole("button", { name: /Smart organizers/i }));
+    expect(await screen.findByRole("heading", { name: "Smart Organizers" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Invoices & receipts/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Create disabled rule" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provide at least one invoice keyword.");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create disabled rule" })).toBeEnabled();
+
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});

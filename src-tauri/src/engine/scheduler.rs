@@ -18,6 +18,7 @@ use crate::database::repo_schedules::{
     self, CatchUpPolicy, QuietHours, Schedule, ScheduleConfig, ScheduleInput, ScheduleType, Weekday,
 };
 use crate::database::{repo_files, repo_folders, repo_rules, Db};
+use crate::duplicates::cache::hydrate_candidates_for_rules;
 use crate::engine::classifier::{Classifier, HEADER_BYTES};
 use crate::engine::conflicts::ConflictPolicy;
 use crate::engine::fs_view::{EntryKind, ReadOnlyFs, RealFs};
@@ -25,13 +26,15 @@ use crate::engine::operations::{BatchTrigger, OpKind};
 use crate::engine::organizer::Organizer;
 use crate::engine::paths::{nfc, PathAuthority};
 use crate::engine::planner::{
-    build_execution_plan, collect_folder_candidates, execute_plan, PlanCandidate, PlanContext,
-    PlanEnv, PlanExecutionReport, PlanScope,
+    build_execution_plan, collect_candidates_from_spec, execute_plan, PlanContext, PlanEnv,
+    PlanExecutionReport, PlanScope,
 };
+use crate::engine::reconcile::FolderScanSpec;
 use crate::engine::scanner::ScannedFile;
 use crate::error::{AppError, AppResult};
-use crate::folders::MonitoredFolder;
-use crate::settings::{MonitoringSettings, SettingsService};
+use crate::notifications::NotificationService;
+use crate::rules::models::scope_rules;
+use crate::settings::SettingsService;
 use crate::utils::clock::Clock;
 
 /// Grace window beyond `next_run_at` before a delayed run is treated as missed (5 minutes).
@@ -379,11 +382,12 @@ impl ScopeKey {
 pub struct SchedulerService {
     db: Db,
     organizer: Organizer,
-    classifier: Arc<Classifier>,
+    classifier: Arc<RwLock<Arc<Classifier>>>,
     authority: Arc<RwLock<PathAuthority>>,
     clock: Arc<dyn Clock>,
     scope_locks: Arc<std::sync::Mutex<HashMap<ScopeKey, Arc<Mutex<()>>>>>,
-    conflict_policy: ConflictPolicy,
+    conflict_policy: Arc<RwLock<ConflictPolicy>>,
+    notifier: Arc<RwLock<Option<Arc<NotificationService>>>>,
 }
 
 impl SchedulerService {
@@ -397,17 +401,57 @@ impl SchedulerService {
         Self {
             db,
             organizer,
-            classifier,
+            classifier: Arc::new(RwLock::new(classifier)),
             authority: Arc::new(RwLock::new(authority)),
             clock,
             scope_locks: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            conflict_policy: ConflictPolicy::AutoRename,
+            conflict_policy: Arc::new(RwLock::new(ConflictPolicy::AutoRename)),
+            notifier: Arc::new(RwLock::new(None)),
         }
     }
 
     pub fn set_authority(&self, authority: PathAuthority) {
         let mut guard = self.authority.write().unwrap_or_else(|e| e.into_inner());
         *guard = authority;
+    }
+
+    pub fn set_classifier(&self, classifier: Arc<Classifier>) {
+        let mut guard = self.classifier.write().unwrap_or_else(|e| e.into_inner());
+        *guard = classifier;
+    }
+
+    pub fn set_conflict_policy(&self, policy: ConflictPolicy) {
+        let mut guard = self
+            .conflict_policy
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        *guard = policy;
+    }
+
+    pub fn set_notifier(&self, notifier: Arc<NotificationService>) {
+        let mut guard = self.notifier.write().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(notifier);
+    }
+
+    fn current_classifier(&self) -> Arc<Classifier> {
+        self.classifier
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    fn current_conflict_policy(&self) -> ConflictPolicy {
+        *self
+            .conflict_policy
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn current_notifier(&self) -> Option<Arc<NotificationService>> {
+        self.notifier
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn scope_lock(&self, key: &ScopeKey) -> Arc<Mutex<()>> {
@@ -657,16 +701,21 @@ impl SchedulerService {
                 .collect()
         };
 
-        let monitoring = SettingsService::new(self.db.clone())
-            .get()
-            .await?
-            .monitoring;
-        let classifier = self.classifier.clone();
-        let scan_folders = target_folders.clone();
-        let candidates = tokio::task::spawn_blocking(move || {
+        let settings = SettingsService::new(self.db.clone()).get().await?;
+        let monitoring = settings.monitoring;
+        let hash_on_scan = settings.performance.hash_on_scan;
+        let classifier = self.current_classifier();
+        let classifier_bg = classifier.clone();
+        let mut folder_specs = Vec::with_capacity(target_folders.len());
+        for folder in &target_folders {
+            let spec = FolderScanSpec::load_for_folder(&self.db, folder, &monitoring).await?;
+            folder_specs.push((folder.name.clone(), spec));
+        }
+        let mut candidates = tokio::task::spawn_blocking(move || {
             let mut candidates = Vec::new();
-            for folder in &scan_folders {
-                let mut cands = scan_candidates_for_folder(folder, &monitoring, &classifier);
+            for (folder_name, spec) in folder_specs {
+                let mut cands =
+                    collect_candidates_from_spec(&spec, &folder_name, &classifier_bg, None);
                 candidates.append(&mut cands);
             }
             candidates
@@ -674,17 +723,22 @@ impl SchedulerService {
         .await
         .map_err(|e| AppError::Internal(format!("scheduler scan task failed: {e}")))?;
 
+        let scoped_rules = scope_rules(&target_rules, sched.rule_id.as_deref());
+        hydrate_candidates_for_rules(&self.db, &mut candidates, &scoped_rules, hash_on_scan)
+            .await?;
+
         let authority = self
             .authority
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
+        let conflict_policy = self.current_conflict_policy();
 
         let plan = build_execution_plan(
             &PlanContext {
                 fs: &RealFs,
                 authority: &authority,
-                classifier: &self.classifier,
+                classifier: &classifier,
                 clock: self.clock.as_ref(),
             },
             &target_rules,
@@ -711,12 +765,16 @@ impl SchedulerService {
         let report = execute_plan(
             &plan,
             None,
-            self.conflict_policy,
+            conflict_policy,
             &self.organizer,
             &authority,
             BatchTrigger::Schedule,
         )
         .await?;
+
+        if let Some(notifier) = self.current_notifier() {
+            notifier.notify_plan_outcome(sched.folder_id.clone(), &plan, &report);
+        }
 
         // Sync `file_records` for executed moves/renames inside monitored folders.
         for op in &report.completed {
@@ -736,9 +794,7 @@ impl SchedulerService {
                     } else {
                         RealFs.read_header(&dst_path, HEADER_BYTES).ok()
                     };
-                    let cls = self
-                        .classifier
-                        .classify(&meta.name, header.as_deref(), is_pkg);
+                    let cls = classifier.classify(&meta.name, header.as_deref(), is_pkg);
                     let new_sf = ScannedFile {
                         facts: meta,
                         category: cls.category,
@@ -766,15 +822,6 @@ impl SchedulerService {
             report: Some(report),
         })
     }
-}
-
-/// Collects `PlanCandidate` entries for a scheduled run without mutating the filesystem (`BUG-022`).
-pub(crate) fn scan_candidates_for_folder(
-    folder: &MonitoredFolder,
-    monitoring: &MonitoringSettings,
-    classifier: &Classifier,
-) -> Vec<PlanCandidate> {
-    collect_folder_candidates(folder, monitoring, classifier, None)
 }
 
 #[cfg(test)]

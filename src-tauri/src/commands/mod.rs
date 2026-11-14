@@ -3,8 +3,15 @@
 
 pub mod activity;
 pub mod app;
+pub mod categories;
+pub mod config_io;
+pub mod dashboard;
+pub mod duplicates;
+pub mod exclusions;
 pub mod folders;
+pub mod license;
 pub mod monitoring;
+pub mod notifications;
 pub mod onboarding;
 pub mod preview;
 pub mod rules;

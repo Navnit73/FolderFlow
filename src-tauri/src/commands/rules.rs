@@ -9,7 +9,8 @@ use crate::app_state::AppState;
 use crate::error::UiError;
 use crate::rules::{
     render_filename_template, render_subpath_template, starter_templates, DateSource, Rule,
-    RuleDraft, RuleOrigin, RuleTemplate, RuleTestReport, SampleFile, ValidationIssue,
+    RuleDraft, RuleOrigin, RuleTemplate, RuleTestReport, SampleFile, SmartOrganizerCatalog,
+    SmartOrganizerSpec, ValidationIssue,
 };
 use crate::utils::clock::{Clock, SystemClock};
 
@@ -156,18 +157,17 @@ pub async fn rules_test_folder(
         .await?)
 }
 
-/// Opens the native folder picker to select and approve a destination folder.
-#[tauri::command]
-#[specta::specta]
-pub async fn rules_pick_destination_folder(
+/// Opens the native folder picker to choose and register an approved destination root.
+pub async fn pick_and_approve_destination_folder(
     app: AppHandle,
     state: State<'_, AppState>,
+    title: &str,
 ) -> Result<Option<String>, UiError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let mut dialog = app
         .dialog()
         .file()
-        .set_title("Choose a destination folder for this rule")
+        .set_title(title)
         .set_can_create_directories(true);
     if let Ok(home) = app.path().home_dir() {
         dialog = dialog.set_directory(home);
@@ -181,4 +181,32 @@ pub async fn rules_pick_destination_folder(
     let approved = state.rules.add_destination_root(&path).await?;
     state.refresh_authority().await?;
     Ok(Some(approved))
+}
+
+/// Opens the native folder picker to select and approve a destination folder.
+#[tauri::command]
+#[specta::specta]
+pub async fn rules_pick_destination_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, UiError> {
+    pick_and_approve_destination_folder(app, state, "Choose a destination folder for this rule")
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rules_smart_catalog(
+    state: State<'_, AppState>,
+) -> Result<SmartOrganizerCatalog, UiError> {
+    Ok(state.rules.smart_catalog().await?)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rules_create_smart_preset(
+    state: State<'_, AppState>,
+    spec: SmartOrganizerSpec,
+) -> Result<Rule, UiError> {
+    Ok(state.rules.create_smart_preset(spec).await?)
 }

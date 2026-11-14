@@ -6,6 +6,7 @@ import {
   Plus,
   Sparkles,
   Trash2,
+  Wand2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -18,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatRelative } from "@/lib/format";
 import type { ExecutionMode, Rule, RuleTemplate } from "@/services/rules";
 import { useRules } from "@/stores/rules";
+import { SmartOrganizerDialog } from "./SmartOrganizerDialog";
 
 const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
   first_match: "First match",
@@ -32,11 +34,13 @@ export function RulesPage() {
   const {
     rules,
     presets,
+    smartCatalog,
     status,
     loadError,
     actionError,
     load,
     createFromPreset,
+    createSmartPresetResult,
     setEnabled,
     moveRule,
     duplicate,
@@ -44,6 +48,7 @@ export function RulesPage() {
     clearActionError,
   } = useRules();
   const [deleting, setDeleting] = useState<Rule | null>(null);
+  const [smartOpen, setSmartOpen] = useState(false);
 
   useEffect(() => {
     if (status === "idle") void load();
@@ -51,6 +56,10 @@ export function RulesPage() {
 
   const headerActions = (
     <>
+      <Button variant="secondary" onClick={() => setSmartOpen(true)}>
+        <Wand2 aria-hidden />
+        Smart organizers
+      </Button>
       <StarterRulesMenu presets={presets} onSelect={(id) => void createFromPreset(id)} variant="secondary" />
       <Button variant="primary" onClick={() => navigate("/rules/new")}>
         <Plus aria-hidden />
@@ -209,6 +218,12 @@ export function RulesPage() {
       >
         This removes the rule from FolderFlow. Existing files that were already organized stay where they are.
       </ConfirmDialog>
+      <SmartOrganizerDialog
+        open={smartOpen}
+        catalog={smartCatalog}
+        onClose={() => setSmartOpen(false)}
+        onCreate={(spec) => createSmartPresetResult(spec)}
+      />
     </>
   );
 }

@@ -39,14 +39,17 @@ describe("UI-SHELL-01 sidebar navigation", () => {
       expect(within(nav).getByText(item.label).closest("[aria-disabled='true']")).not.toBeNull();
       expect(within(nav).queryByRole("link", { name: new RegExp(item.label) })).toBeNull();
     }
+    for (const item of NAV_ITEMS.filter((i) => i.available)) {
+      expect(within(nav).getByRole("link", { name: new RegExp(item.label) })).toBeInTheDocument();
+    }
   });
 
   it("redirects / and unknown routes to the first available screen", async () => {
     const router = await renderAt("/does-not-exist");
-    expect(router.state.location.pathname).toBe("/folders");
-    expect(screen.getByRole("link", { name: /Folders/ })).toHaveAttribute("aria-current", "page");
+    expect(router.state.location.pathname).toBe("/overview");
+    expect(screen.getByRole("link", { name: /Overview/ })).toHaveAttribute("aria-current", "page");
     const root = await renderAt("/");
-    expect(root.state.location.pathname).toBe("/folders");
+    expect(root.state.location.pathname).toBe("/overview");
   });
 
   it("navigates between settings sections", async () => {

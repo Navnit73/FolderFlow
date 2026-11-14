@@ -9,6 +9,7 @@ pub mod evaluator;
 pub mod models;
 pub mod presets;
 pub mod service;
+pub mod smart;
 pub mod templates;
 pub mod validate;
 
@@ -17,5 +18,6 @@ pub use evaluator::*;
 pub use models::*;
 pub use presets::*;
 pub use service::*;
+pub use smart::*;
 pub use templates::*;
 pub use validate::*;

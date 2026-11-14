@@ -18,6 +18,9 @@ import type {
   Rule_Serialize,
   SizeOp,
   SizeUnit,
+  SmartDownloadCategoryInfo,
+  SmartOrganizerCatalog,
+  SmartOrganizerSpec_Deserialize,
   TemplatePreviewInput_Deserialize,
   TemplatePreviewOutput_Serialize,
   TextFieldKind,
@@ -30,6 +33,7 @@ export type Rule = Rule_Serialize;
 export type RuleDraft = RuleDraft_Serialize;
 export type RuleDraftInput = RuleDraft_Deserialize;
 export type RuleTemplate = RuleTemplate_Serialize;
+export type SmartOrganizerSpec = SmartOrganizerSpec_Deserialize;
 export type ConditionNode = ConditionNode_Serialize;
 export type Condition = Condition_Serialize;
 export type Action = Action_Serialize;
@@ -47,6 +51,8 @@ export type {
   RuleTestReport,
   SizeOp,
   SizeUnit,
+  SmartDownloadCategoryInfo,
+  SmartOrganizerCatalog,
   TextFieldKind,
   TextOp,
   ValidationIssue,
@@ -57,6 +63,8 @@ export const rulesService = {
   get: (id: string): Promise<Rule> => unwrap(commands.rulesGet(id)),
   create: (draft: RuleDraftInput): Promise<Rule> => unwrap(commands.rulesCreate(draft)),
   createFromPreset: (presetId: string): Promise<Rule> => unwrap(commands.rulesCreateFromPreset(presetId)),
+  smartCatalog: (): Promise<SmartOrganizerCatalog> => unwrap(commands.rulesSmartCatalog()),
+  createSmartPreset: (spec: SmartOrganizerSpec): Promise<Rule> => unwrap(commands.rulesCreateSmartPreset(spec)),
   update: (id: string, draft: RuleDraftInput): Promise<Rule> => unwrap(commands.rulesUpdate(id, draft)),
   remove: (id: string): Promise<null> => unwrap(commands.rulesDelete(id)),
   reorder: (orderedIds: string[]): Promise<Rule[]> => unwrap(commands.rulesReorder(orderedIds)),

@@ -49,6 +49,44 @@ pub fn symlink(target: impl AsRef<Path>, link: impl AsRef<Path>) {
     std::os::unix::fs::symlink(target, link).expect("symlink");
 }
 
+/// Writes a sparse fixture file of logical `len` bytes with optional head and tail markers
+/// so hashing tests can exercise multi-gigabyte streaming without allocating disk/RAM blocks.
+pub fn write_sparse_file(path: &Path, len: u64, head_marker: &[u8], tail_marker: &[u8]) {
+    use std::io::{Seek, SeekFrom, Write};
+    assert_test_path(path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create parent");
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .expect("open sparse fixture");
+    file.set_len(len).expect("set sparse len");
+    if !head_marker.is_empty() {
+        file.seek(SeekFrom::Start(0)).expect("seek head");
+        file.write_all(head_marker).expect("write head marker");
+    }
+    if !tail_marker.is_empty() && len >= tail_marker.len() as u64 {
+        file.seek(SeekFrom::Start(len - tail_marker.len() as u64))
+            .expect("seek tail");
+        file.write_all(tail_marker).expect("write tail marker");
+    }
+    file.sync_all().ok();
+}
+
+/// Updates a fixture file's modification timestamp (in whole seconds since Unix epoch).
+pub fn set_file_mtime_secs(path: &Path, secs_since_epoch: u64) {
+    assert_test_path(path);
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .expect("open fixture for mtime");
+    let ts = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs_since_epoch);
+    file.set_modified(ts).expect("set_modified");
+}
+
 /// Canonical temp dir (macOS /var → /private/var), so paths compare exactly.
 pub fn tempdir() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");

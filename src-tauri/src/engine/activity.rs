@@ -280,19 +280,7 @@ pub async fn load_path_authority(db: &Db) -> AppResult<PathAuthority> {
     Ok(PathAuthority::new(roots))
 }
 
-/// RFC-4180 CSV field escaping with formula-injection protection (`=`, `+`, `-`, `@`, `\t`, `\r`).
-fn csv_escape(s: &str) -> String {
-    let guarded = if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
-        format!("'{s}")
-    } else {
-        s.to_owned()
-    };
-    if guarded.contains([',', '"', '\n', '\r']) {
-        format!("\"{}\"", guarded.replace('"', "\"\""))
-    } else {
-        guarded
-    }
-}
+use crate::utils::csv_escape;
 
 #[cfg(test)]
 mod tests {

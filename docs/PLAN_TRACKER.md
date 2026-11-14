@@ -3,7 +3,7 @@
 > **This file is the source of truth for progress.** Update it in the same change as the code.
 > Requirements live in [PRD.md](PRD.md). Test IDs are defined in [TESTING_STRATEGY.md](TESTING_STRATEGY.md). Audits live in [audits/](audits/).
 
-**Last updated:** 2026-11-14 · **Current phase:** Phase 5 — Preview & automation 🟨 (in progress)
+**Last updated:** 2026-11-14 · **Current phase:** Phase 7 — macOS integration ⬜ (not started)
 
 ## Status legend
 
@@ -26,7 +26,7 @@
 | 3 | Rule engine | ✅ | 67 / 40 (55 Rust · 12 TS) | [phase-3](audits/phase-3.md) ✅ | 2026-11-14 |
 | 4 | Safe operations | ✅ | 65 / 42 (60 Rust · 5 TS) | [phase-4](audits/phase-4.md) ✅ | 2026-11-14 |
 | 5 | Preview & automation | ✅ | 43 / 30 (33 Rust · 10 TS) | [phase-5](audits/phase-5.md) ✅ | 2026-11-14 |
-| 6 | Advanced features | ⬜ | 0 / 30 | ⬜ | — |
+| 6 | Advanced features | ✅ | 48 / 30 (36 Rust · 12 TS) | [phase-6](audits/phase-6.md) ✅ | 2026-11-14 |
 | 7 | macOS integration | ⬜ | 0 / 18 | ⬜ | — |
 | 8 | Quality assurance | ⬜ | 0 / 20 | ⬜ | — |
 | 9 | Production release | ⬜ | 0 / 8 | ⬜ | — |
@@ -219,16 +219,16 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests first | Status |
 |---|---|---|---|
-| P6-T01 | Streaming BLAKE3 hasher + hash cache with invalidation | R-HASH-01..04 | ⬜ |
-| P6-T02 | Duplicate finder: size prefilter → partial hash → full hash | R-DUP-01..06 | ⬜ |
-| P6-T03 | Duplicate actions (keep, move to review, trash w/ confirm, ignore, export) | R-DUP-07..10 | ⬜ |
-| P6-T04 | Smart organizers as rule templates (screenshot patterns, invoice keywords, downloads, old files) | R-SMART-01..04 | ⬜ |
-| P6-T05 | Import/export (versioned JSON, validation, diff, imported rules disabled) | R-IO-01..06 | ⬜ |
-| P6-T06 | Notification service with batching + throttling + per-type prefs | R-NOTIF-01..04 | ⬜ |
-| P6-T07 | Dashboard queries + screen (all real stats) | R-STATS-01..03, UI-DASH-01..02 | ⬜ |
-| P6-T08 | Duplicates screen + Categories screen | UI-DUP-01..02, UI-CAT-01 | ⬜ |
+| P6-T01 | Streaming BLAKE3 hasher + hash cache with invalidation | R-HASH-01..04 | ✅ |
+| P6-T02 | Duplicate finder: size prefilter → partial hash → full hash | R-DUP-01..06, BUG-026, BUG-028..029 | ✅ |
+| P6-T03 | Duplicate actions (keep, move to review, trash w/ confirm, ignore, export) | R-DUP-07..10, BUG-030 | ✅ |
+| P6-T04 | Smart organizers as rule templates (screenshot patterns, invoice keywords, downloads, old files) | R-SMART-01..04 | ✅ |
+| P6-T05 | Import/export (versioned JSON, validation, diff, imported rules disabled) | R-IO-01..06, BUG-031 | ✅ |
+| P6-T06 | Notification service with batching + throttling + per-type prefs | R-NOTIF-01..04, BUG-032 | ✅ |
+| P6-T07 | Dashboard queries + screen (all real stats) | R-STATS-01..03, UI-DASH-01..02 | ✅ |
+| P6-T08 | Duplicates screen + Categories screen (+ Settings Monitoring/Organization/Performance/Notifications/Privacy/Backup) | UI-DUP-01..03, UI-CAT-01..02, UI-SMART-01, BUG-033 | ✅ |
 
-**Exit criteria:** hashing never exceeds fixed buffer (memory test on 2 GB sparse file); dashboard has zero hardcoded values. Audit-6 recorded.
+**Exit criteria:** hashing never exceeds fixed buffer (memory test on 2 GB sparse file); dashboard has zero hardcoded values. Audit-6 recorded in [audits/phase-6.md](audits/phase-6.md). ✅ Met — see [audits/phase-6.md](audits/phase-6.md).
 
 ---
 

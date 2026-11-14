@@ -27,7 +27,7 @@ use crate::engine::scanner::{scan, ScanOptions};
 use crate::error::{AppError, AppResult};
 use crate::folders::MonitoredFolder;
 use crate::rules::evaluator::{evaluate_rules, EvalWarning, PlannedOp};
-use crate::rules::models::{FileFacts, Rule};
+use crate::rules::models::{scope_rules, FileFacts, Rule};
 use crate::settings::MonitoringSettings;
 use crate::utils::clock::Clock;
 
@@ -456,18 +456,17 @@ fn recompute_item_status(op: PlanOpKind, conflicts: &[PlanConflict]) -> PlanItem
 }
 
 /// Builds an immutable [`ExecutionPlan`] using only `&dyn ReadOnlyFs` (`P5-T01`, `P5-T02`).
-/// Collects [`PlanCandidate`] entries for `folder`, honoring both per-folder filters and
-/// global [`MonitoringSettings`] via [`FolderScanSpec`] (`BUG-022`).
-pub fn collect_folder_candidates(
-    folder: &MonitoredFolder,
-    monitoring: &MonitoringSettings,
+/// Builds [`PlanCandidate`] entries from a pre-loaded [`FolderScanSpec`]
+/// (including DB global and per-folder exclusions; `BUG-026`).
+pub fn collect_candidates_from_spec(
+    spec: &FolderScanSpec,
+    folder_name: &str,
     classifier: &Classifier,
     explicit_paths: Option<&HashSet<PathBuf>>,
 ) -> Vec<PlanCandidate> {
-    let spec = FolderScanSpec::from_folder(folder, monitoring);
     let opts = ScanOptions {
         recursive: spec.recursive,
-        rules: spec.rules,
+        rules: spec.rules.clone(),
     };
     let mut out = Vec::new();
     let _ = scan(&spec.path, &opts, classifier, |batch| {
@@ -478,9 +477,9 @@ pub fn collect_folder_candidates(
                 }
             }
             out.push(PlanCandidate {
-                folder_id: folder.id.clone(),
+                folder_id: spec.id.clone(),
                 folder_path: spec.path.clone(),
-                folder_name: folder.name.clone(),
+                folder_name: folder_name.to_owned(),
                 path: sf.facts.path,
                 category_hint: Some(sf.category),
                 mime_hint: sf.mime,
@@ -491,6 +490,18 @@ pub fn collect_folder_candidates(
         Ok(())
     });
     out
+}
+
+/// Collects [`PlanCandidate`] entries for `folder`, honoring both per-folder filters and
+/// global [`MonitoringSettings`] via [`FolderScanSpec`] (`BUG-022`).
+pub fn collect_folder_candidates(
+    folder: &MonitoredFolder,
+    monitoring: &MonitoringSettings,
+    classifier: &Classifier,
+    explicit_paths: Option<&HashSet<PathBuf>>,
+) -> Vec<PlanCandidate> {
+    let spec = FolderScanSpec::from_folder(folder, monitoring);
+    collect_candidates_from_spec(&spec, &folder.name, classifier, explicit_paths)
 }
 
 /// Borrowed engine services required by [`build_execution_plan`].
@@ -515,19 +526,7 @@ pub fn build_execution_plan(
         classifier,
         clock,
     } = *ctx;
-    let scoped_rules: Vec<Rule> = if let Some(rule_id) = &scope.rule_id {
-        rules
-            .iter()
-            .filter(|r| &r.id == rule_id)
-            .map(|r| {
-                let mut cloned = r.clone();
-                cloned.enabled = true;
-                cloned
-            })
-            .collect()
-    } else {
-        rules.to_vec()
-    };
+    let scoped_rules = scope_rules(rules, scope.rule_id.as_deref());
 
     let explicit_paths: Option<HashSet<PathBuf>> = scope.file_paths.as_ref().map(|list| {
         list.iter()
@@ -2272,6 +2271,13 @@ mod tests {
 
         fn read_header(&self, path: &Path, max: usize) -> std::io::Result<Vec<u8>> {
             RealFs.read_header(path, max)
+        }
+
+        fn open_read(
+            &self,
+            path: &Path,
+        ) -> std::io::Result<Box<dyn crate::engine::fs_view::ReadSeek>> {
+            RealFs.open_read(path)
         }
     }
 

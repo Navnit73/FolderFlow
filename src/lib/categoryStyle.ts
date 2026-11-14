@@ -18,6 +18,22 @@ const SWATCH: Record<string, string> = {
   "cat-other": "bg-cat-other",
 };
 
+export const CATEGORY_COLOR_TOKENS: { token: string; label: string }[] = [
+  { token: "cat-documents", label: "Documents" },
+  { token: "cat-images", label: "Images" },
+  { token: "cat-videos", label: "Videos" },
+  { token: "cat-audio", label: "Audio" },
+  { token: "cat-archives", label: "Archives" },
+  { token: "cat-spreadsheets", label: "Spreadsheets" },
+  { token: "cat-presentations", label: "Presentations" },
+  { token: "cat-installers", label: "Installers" },
+  { token: "cat-design", label: "Design" },
+  { token: "cat-development", label: "Development" },
+  { token: "cat-fonts", label: "Fonts" },
+  { token: "cat-ebooks", label: "eBooks" },
+  { token: "cat-other", label: "Other" },
+];
+
 export function categorySwatch(colorToken: string | undefined): string {
   return SWATCH[colorToken ?? ""] ?? "bg-cat-other";
 }

@@ -124,6 +124,7 @@ pub async fn folders_add_known(
 #[tauri::command]
 #[specta::specta]
 pub async fn folders_update(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: String,
     patch: FolderPatch,
@@ -134,6 +135,7 @@ pub async fn folders_update(
         state.monitor.start(folder.clone()).await;
     } else {
         state.monitor.stop(&id).await;
+        crate::system::tray::refresh_tray_async(app).await;
     }
     Ok(folder)
 }
@@ -141,10 +143,15 @@ pub async fn folders_update(
 /// Stops monitoring and forgets the folder. Files are never touched.
 #[tauri::command]
 #[specta::specta]
-pub async fn folders_remove(state: State<'_, AppState>, id: String) -> Result<(), UiError> {
+pub async fn folders_remove(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), UiError> {
     state.monitor.stop(&id).await;
     state.folders.remove(&id).await?;
     state.refresh_authority().await?;
+    crate::system::tray::refresh_tray_async(app).await;
     Ok(())
 }
 

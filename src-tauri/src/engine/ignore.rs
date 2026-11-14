@@ -6,6 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::database::repo_exclusions::{ExclusionEntry, ExclusionKind};
+use crate::engine::paths::{nfc, nfc_str};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipReason {
     SystemFile,
@@ -14,6 +17,7 @@ pub enum SkipReason {
     Hidden,
     CacheDirectory,
     ExcludedFolder,
+    ExcludedGlob,
     ExcludedExtension,
     NotIncludedExtension,
     Symlink,
@@ -28,8 +32,10 @@ pub struct IgnoreRules {
     /// If non-empty, only these extensions are processed.
     pub include_extensions: Vec<String>,
     pub exclude_extensions: Vec<String>,
-    /// Absolute paths of excluded subfolders (pruned with everything inside).
+    /// Absolute paths of excluded subfolders or files (pruned with everything inside).
     pub excluded_dirs: Vec<PathBuf>,
+    /// Compiled filename glob exclusions from `exclusions` table.
+    pub excluded_globs: Vec<glob::Pattern>,
 }
 
 /// Names that are always system metadata.
@@ -69,22 +75,133 @@ const CACHE_DIRS: &[&str] = &[
 pub const STAGING_PREFIX: &str = ".folderflow-";
 
 impl IgnoreRules {
+    /// Builds [`IgnoreRules`] from global monitoring settings, per-folder settings,
+    /// and any extra excluded directory paths.
+    pub fn from_folder_and_monitoring(
+        monitoring: &crate::settings::MonitoringSettings,
+        folder: &crate::folders::FolderSettings,
+        extra_excluded_dirs: Vec<PathBuf>,
+    ) -> Self {
+        let mut excluded_dirs: Vec<PathBuf> = folder
+            .excluded_subfolders
+            .iter()
+            .map(|s| nfc(Path::new(s)))
+            .collect();
+        for d in extra_excluded_dirs {
+            let clean = nfc(&d);
+            if !excluded_dirs.contains(&clean) {
+                excluded_dirs.push(clean);
+            }
+        }
+        Self {
+            ignore_hidden: monitoring.ignore_hidden_files,
+            ignore_temporary: monitoring.ignore_temporary_files,
+            include_extensions: folder
+                .include_extensions
+                .iter()
+                .map(|e| e.trim().trim_start_matches('.').to_lowercase())
+                .collect(),
+            exclude_extensions: folder
+                .exclude_extensions
+                .iter()
+                .map(|e| e.trim().trim_start_matches('.').to_lowercase())
+                .collect(),
+            excluded_dirs,
+            excluded_globs: Vec::new(),
+        }
+    }
+
+    /// Merges database [`ExclusionEntry`] records (global + per-folder) into these ignore rules (`BUG-026`).
+    pub fn apply_db_exclusions(&mut self, entries: &[ExclusionEntry]) {
+        for entry in entries {
+            match entry.exclusion_type {
+                ExclusionKind::Path => {
+                    let clean = nfc(Path::new(&entry.path));
+                    if !self.excluded_dirs.contains(&clean) {
+                        self.excluded_dirs.push(clean);
+                    }
+                }
+                ExclusionKind::Extension => {
+                    let ext = entry.path.trim().trim_start_matches('.').to_lowercase();
+                    if !ext.is_empty() && !self.exclude_extensions.contains(&ext) {
+                        self.exclude_extensions.push(ext);
+                    }
+                }
+                ExclusionKind::Glob => {
+                    if let Ok(pat) = glob::Pattern::new(&nfc_str(&entry.path)) {
+                        self.excluded_globs.push(pat);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Checks ancestor directories between `folder_root` and `entry_path` plus the entry itself.
+    pub fn is_path_excluded(
+        &self,
+        folder_root: &Path,
+        entry_path: &Path,
+        name: &str,
+        ext: Option<&str>,
+        hidden: bool,
+        is_dir_or_pkg: bool,
+    ) -> bool {
+        let root_nfc = nfc(folder_root);
+        let entry_nfc = nfc(entry_path);
+        if let Ok(rel) = entry_nfc.strip_prefix(&root_nfc) {
+            let mut cur = root_nfc;
+            if let Some(parent) = rel.parent() {
+                for comp in parent.components() {
+                    cur.push(comp);
+                    let comp_name = comp.as_os_str().to_string_lossy();
+                    if self
+                        .check_dir(&cur, &comp_name, comp_name.starts_with('.'))
+                        .is_some()
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        if is_dir_or_pkg {
+            self.check_dir(&entry_nfc, name, hidden).is_some()
+                || self.check_file(&entry_nfc, name, ext, hidden).is_some()
+        } else {
+            self.check_file(&entry_nfc, name, ext, hidden).is_some()
+        }
+    }
+
     /// For a file (or package) entry. `None` = process it.
     pub fn check_file(
         &self,
-        _path: &Path,
+        path: &Path,
         name: &str,
         ext: Option<&str>,
         hidden: bool,
     ) -> Option<SkipReason> {
-        if name.starts_with(STAGING_PREFIX) {
+        let name_nfc = nfc_str(name);
+        if name_nfc.starts_with(STAGING_PREFIX) {
             return Some(SkipReason::OwnStagingFile);
         }
-        if SYSTEM_NAMES.contains(&name) || name.starts_with("._") {
+        if SYSTEM_NAMES.contains(&name)
+            || SYSTEM_NAMES.contains(&name_nfc.as_str())
+            || name.starts_with("._")
+        {
             return Some(SkipReason::SystemFile);
         }
         if ext.is_some_and(|e| PARTIAL_EXTENSIONS.contains(&e)) {
             return Some(SkipReason::PartialDownload);
+        }
+        let path_nfc = nfc(path);
+        if self
+            .excluded_dirs
+            .iter()
+            .any(|d| path_nfc == *d || path_nfc.starts_with(d))
+        {
+            return Some(SkipReason::ExcludedFolder);
+        }
+        if self.excluded_globs.iter().any(|g| g.matches(&name_nfc)) {
+            return Some(SkipReason::ExcludedGlob);
         }
         if hidden && self.ignore_hidden {
             return Some(SkipReason::Hidden);
@@ -96,11 +213,17 @@ impl IgnoreRules {
         {
             return Some(SkipReason::Temporary);
         }
-        if ext.is_some_and(|e| self.exclude_extensions.iter().any(|x| x == e)) {
+        let ext_lower = ext.map(str::to_lowercase);
+        if ext_lower
+            .as_deref()
+            .is_some_and(|e| self.exclude_extensions.iter().any(|x| x == e))
+        {
             return Some(SkipReason::ExcludedExtension);
         }
         if !self.include_extensions.is_empty()
-            && !ext.is_some_and(|e| self.include_extensions.iter().any(|x| x == e))
+            && !ext_lower
+                .as_deref()
+                .is_some_and(|e| self.include_extensions.iter().any(|x| x == e))
         {
             return Some(SkipReason::NotIncludedExtension);
         }
@@ -109,7 +232,8 @@ impl IgnoreRules {
 
     /// For a directory entry. `Some` = do not descend.
     pub fn check_dir(&self, path: &Path, name: &str, hidden: bool) -> Option<SkipReason> {
-        if name.starts_with(STAGING_PREFIX) {
+        let name_nfc = nfc_str(name);
+        if name_nfc.starts_with(STAGING_PREFIX) {
             return Some(SkipReason::OwnStagingFile);
         }
         let ext = crate::engine::classifier::extension_of(name);
@@ -119,11 +243,15 @@ impl IgnoreRules {
         {
             return Some(SkipReason::PartialDownload);
         }
-        if CACHE_DIRS.contains(&name) {
+        if CACHE_DIRS.contains(&name) || CACHE_DIRS.contains(&name_nfc.as_str()) {
             return Some(SkipReason::CacheDirectory);
         }
-        if self.excluded_dirs.iter().any(|d| path.starts_with(d)) {
+        let path_nfc = nfc(path);
+        if self.excluded_dirs.iter().any(|d| path_nfc.starts_with(d)) {
             return Some(SkipReason::ExcludedFolder);
+        }
+        if self.excluded_globs.iter().any(|g| g.matches(&name_nfc)) {
+            return Some(SkipReason::ExcludedGlob);
         }
         if hidden && self.ignore_hidden {
             return Some(SkipReason::Hidden);

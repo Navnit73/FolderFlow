@@ -1,5 +1,11 @@
 //! macOS integration (no shell, no `Command` — SAFETY_MODEL S11).
 
+pub mod coordinator;
+pub mod login_item;
+pub mod tray;
+
+pub use login_item::{LoginItemBackend, LoginItemService, LoginItemStatus, SmAppServiceBackend};
+
 use std::path::Path;
 
 /// System Settings → Privacy & Security → Files and Folders.

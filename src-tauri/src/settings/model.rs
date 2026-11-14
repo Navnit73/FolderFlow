@@ -179,10 +179,59 @@ impl Default for PrivacySettings {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NotificationEventPrefs {
+    pub success_summary: bool,
+    pub large_batch_done: bool,
+    pub failure: bool,
+    pub permission_issue: bool,
+    pub destination_unavailable: bool,
+    pub duplicates_found: bool,
+    pub monitoring_stopped: bool,
+}
+impl Default for NotificationEventPrefs {
+    fn default() -> Self {
+        Self {
+            success_summary: true,
+            large_batch_done: true,
+            failure: true,
+            permission_issue: true,
+            destination_unavailable: true,
+            duplicates_found: true,
+            monitoring_stopped: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NotificationSettings {
+    pub enabled: bool,
+    /// Seconds to coalesce related events into a single summary notification (FR-202).
+    pub batch_window_secs: u32,
+    /// Minimum seconds between emitted notifications of the same event type (FR-202).
+    pub cooldown_secs: u32,
+    /// Minimum files in a batch before emitting a `large_batch_done` notification (FR-200).
+    pub large_batch_threshold: u32,
+    pub per_type: NotificationEventPrefs,
+}
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            batch_window_secs: 10,
+            cooldown_secs: 30,
+            large_batch_threshold: 25,
+            per_type: NotificationEventPrefs::default(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------- root
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub general: GeneralSettings,
     pub monitoring: MonitoringSettings,
@@ -190,6 +239,7 @@ pub struct Settings {
     pub performance: PerformanceSettings,
     pub appearance: AppearanceSettings,
     pub privacy: PrivacySettings,
+    pub notifications: NotificationSettings,
 }
 
 fn check_range(field: &str, value: u32, min: u32, max: u32) -> AppResult<()> {
@@ -243,6 +293,24 @@ impl Settings {
             1,
             90,
         )?;
+        check_range(
+            "notifications.batchWindowSecs",
+            self.notifications.batch_window_secs,
+            0,
+            300,
+        )?;
+        check_range(
+            "notifications.cooldownSecs",
+            self.notifications.cooldown_secs,
+            0,
+            3600,
+        )?;
+        check_range(
+            "notifications.largeBatchThreshold",
+            self.notifications.large_batch_threshold,
+            2,
+            10_000,
+        )?;
 
         let o = &self.organization;
         let t = o.naming_template.trim();
@@ -277,6 +345,7 @@ impl Settings {
             performance: section(&rows, "performance"),
             appearance: section(&rows, "appearance"),
             privacy: section(&rows, "privacy"),
+            notifications: section(&rows, "notifications"),
         }
     }
 
@@ -288,6 +357,7 @@ impl Settings {
             ("performance", serde_json::to_string(&self.performance)?),
             ("appearance", serde_json::to_string(&self.appearance)?),
             ("privacy", serde_json::to_string(&self.privacy)?),
+            ("notifications", serde_json::to_string(&self.notifications)?),
         ])
     }
 }

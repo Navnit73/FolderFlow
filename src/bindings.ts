@@ -14,6 +14,15 @@ export const commands = {
 	settingsGet: (options?: InvokeOptions) => typedError<Settings_Serialize, UiError_Serialize>(__TAURI_INVOKE("settings_get", undefined, options)),
 	/**  Replaces all settings after validation. Returns the stored settings. */
 	settingsUpdate: (settings: Settings_Deserialize, options?: InvokeOptions) => typedError<Settings_Serialize, UiError_Serialize>(__TAURI_INVOKE("settings_update", { settings }, options)),
+	/**  Returns current macOS `SMAppService` Launch at Login registration state (`FR-180`, `P7-T02`). */
+	loginItemStatus: (options?: InvokeOptions) => typedError<LoginItemStatus, UiError_Serialize>(__TAURI_INVOKE("login_item_status", undefined, options)),
+	/**  Opens System Settings → General → Login Items (`FR-180`, `P7-T02`). */
+	openLoginItemsSettings: (options?: InvokeOptions) => typedError<boolean, UiError_Serialize>(__TAURI_INVOKE("open_login_items_settings", undefined, options)),
+	licenseStatus: (options?: InvokeOptions) => typedError<LicenseStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("license_status", undefined, options)),
+	licenseActivate: (key: string, options?: InvokeOptions) => typedError<LicenseStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("license_activate", { key }, options)),
+	licenseActivateOffline: (signedKeyOrJson: string, options?: InvokeOptions) => typedError<LicenseStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("license_activate_offline", { signedKeyOrJson }, options)),
+	licensePickAndActivateOfflineFile: (options?: InvokeOptions) => typedError<LicenseStatus_Serialize | null, UiError_Serialize>(__TAURI_INVOKE("license_pick_and_activate_offline_file", undefined, options)),
+	licenseDeactivate: (options?: InvokeOptions) => typedError<LicenseStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("license_deactivate", undefined, options)),
 	foldersList: (options?: InvokeOptions) => typedError<MonitoredFolder_Serialize[], UiError_Serialize>(__TAURI_INVOKE("folders_list", undefined, options)),
 	/**
 	 *  Opens the native folder picker and starts monitoring the chosen folder.
@@ -40,10 +49,18 @@ export const commands = {
 	/**  Pauses or resumes all monitoring (FR-018, menu bar in Phase 7). */
 	monitoringSetPaused: (paused: boolean, options?: InvokeOptions) => typedError<MonitoringStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("monitoring_set_paused", { paused }, options)),
 	categoriesList: (options?: InvokeOptions) => typedError<Category_Serialize[], UiError_Serialize>(__TAURI_INVOKE("categories_list", undefined, options)),
+	categoriesCreate: (input: CategoryInput_Deserialize, options?: InvokeOptions) => typedError<Category_Serialize, UiError_Serialize>(__TAURI_INVOKE("categories_create", { input }, options)),
+	categoriesUpdate: (id: string, input: CategoryInput_Deserialize, options?: InvokeOptions) => typedError<Category_Serialize, UiError_Serialize>(__TAURI_INVOKE("categories_update", { id, input }, options)),
+	categoriesDelete: (id: string, options?: InvokeOptions) => typedError<null, UiError_Serialize>(__TAURI_INVOKE("categories_delete", { id }, options)),
+	categoriesSetEnabled: (id: string, enabled: boolean, options?: InvokeOptions) => typedError<Category_Serialize, UiError_Serialize>(__TAURI_INVOKE("categories_set_enabled", { id, enabled }, options)),
+	categoriesReorder: (orderedIds: string[], options?: InvokeOptions) => typedError<Category_Serialize[], UiError_Serialize>(__TAURI_INVOKE("categories_reorder", { orderedIds }, options)),
+	categoriesPickDestinationFolder: (options?: InvokeOptions) => typedError<string | null, UiError_Serialize>(__TAURI_INVOKE("categories_pick_destination_folder", undefined, options)),
 	rulesList: (options?: InvokeOptions) => typedError<Rule_Serialize[], UiError_Serialize>(__TAURI_INVOKE("rules_list", undefined, options)),
 	rulesGet: (id: string, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_get", { id }, options)),
 	rulesCreate: (draft: RuleDraft_Deserialize, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_create", { draft }, options)),
 	rulesCreateFromPreset: (presetId: string, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_create_from_preset", { presetId }, options)),
+	rulesSmartCatalog: (options?: InvokeOptions) => typedError<SmartOrganizerCatalog, UiError_Serialize>(__TAURI_INVOKE("rules_smart_catalog", undefined, options)),
+	rulesCreateSmartPreset: (spec: SmartOrganizerSpec_Deserialize, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_create_smart_preset", { spec }, options)),
 	rulesUpdate: (id: string, draft: RuleDraft_Deserialize, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_update", { id, draft }, options)),
 	rulesDelete: (id: string, options?: InvokeOptions) => typedError<null, UiError_Serialize>(__TAURI_INVOKE("rules_delete", { id }, options)),
 	rulesReorder: (orderedIds: string[], options?: InvokeOptions) => typedError<Rule_Serialize[], UiError_Serialize>(__TAURI_INVOKE("rules_reorder", { orderedIds }, options)),
@@ -67,6 +84,27 @@ export const commands = {
 	planItems: (planId: string, filter: PlanItemFilter_Deserialize, limit: number, offset: number, options?: InvokeOptions) => typedError<PlanItemsPage, UiError_Serialize>(__TAURI_INVOKE("plan_items", { planId, filter, limit, offset }, options)),
 	planExecute: (planId: string, selectedItemIds: string[] | null, conflictPolicy: ConflictPolicy, options?: InvokeOptions) => typedError<PlanExecutionReport_Serialize, UiError_Serialize>(__TAURI_INVOKE("plan_execute", { planId, selectedItemIds, conflictPolicy }, options)),
 	planDiscard: (planId: string, options?: InvokeOptions) => typedError<boolean, UiError_Serialize>(__TAURI_INVOKE("plan_discard", { planId }, options)),
+	dupScan: (opts: DuplicateScanOptions_Deserialize, options?: InvokeOptions) => typedError<DuplicateScanReport_Serialize, UiError_Serialize>(__TAURI_INVOKE("dup_scan", { opts }, options)),
+	dupGroups: (includeIgnored: boolean, search: string | null, options?: InvokeOptions) => typedError<DuplicateGroupsResponse_Serialize, UiError_Serialize>(__TAURI_INVOKE("dup_groups", { includeIgnored, search }, options)),
+	dupGroupDetails: (groupId: string, options?: InvokeOptions) => typedError<DuplicateGroupSummary_Serialize, UiError_Serialize>(__TAURI_INVOKE("dup_group_details", { groupId }, options)),
+	dupAction: (action: DupAction_Deserialize, options?: InvokeOptions) => typedError<DupActionReport_Serialize, UiError_Serialize>(__TAURI_INVOKE("dup_action", { action }, options)),
+	dupExport: (format: DupExportFormat, includeIgnored: boolean, options?: InvokeOptions) => typedError<string, UiError_Serialize>(__TAURI_INVOKE("dup_export", { format, includeIgnored }, options)),
+	dupRevealFile: (fileRecordId: string, options?: InvokeOptions) => typedError<boolean, UiError_Serialize>(__TAURI_INVOKE("dup_reveal_file", { fileRecordId }, options)),
+	dupPickReviewFolder: (options?: InvokeOptions) => typedError<string | null, UiError_Serialize>(__TAURI_INVOKE("dup_pick_review_folder", undefined, options)),
+	dashboardStats: (options?: InvokeOptions) => typedError<DashboardStats_Serialize, UiError_Serialize>(__TAURI_INVOKE("dashboard_stats", undefined, options)),
+	dbMaintenance: (options?: InvokeOptions) => typedError<DbMaintenanceReport, UiError_Serialize>(__TAURI_INVOKE("db_maintenance", undefined, options)),
+	exclusionsList: (folderId: string | null, options?: InvokeOptions) => typedError<ExclusionEntry_Serialize[], UiError_Serialize>(__TAURI_INVOKE("exclusions_list", { folderId }, options)),
+	exclusionsCreate: (input: ExclusionInput_Deserialize, options?: InvokeOptions) => typedError<ExclusionEntry_Serialize, UiError_Serialize>(__TAURI_INVOKE("exclusions_create", { input }, options)),
+	exclusionsDelete: (id: string, options?: InvokeOptions) => typedError<boolean, UiError_Serialize>(__TAURI_INVOKE("exclusions_delete", { id }, options)),
+	configExport: (options?: InvokeOptions) => typedError<string, UiError_Serialize>(__TAURI_INVOKE("config_export", undefined, options)),
+	/**  Opens a native file picker for a `.json` backup and reads up to 5 MiB safely. */
+	configPickImportFile: (options?: InvokeOptions) => typedError<string | null, UiError_Serialize>(__TAURI_INVOKE("config_pick_import_file", undefined, options)),
+	configImportPreview: (rawJson: string, mode: ConfigImportMode | null, options?: InvokeOptions) => typedError<ConfigImportPreview, UiError_Serialize>(__TAURI_INVOKE("config_import_preview", { rawJson, mode }, options)),
+	configImportApply: (rawJson: string, mode: ConfigImportMode, options?: InvokeOptions) => typedError<ConfigImportReport, UiError_Serialize>(__TAURI_INVOKE("config_import_apply", { rawJson, mode }, options)),
+	notificationsList: (options?: InvokeOptions) => typedError<NotificationRecord_Serialize[], UiError_Serialize>(__TAURI_INVOKE("notifications_list", undefined, options)),
+	notificationsMarkRead: (id: string | null, options?: InvokeOptions) => typedError<number, UiError_Serialize>(__TAURI_INVOKE("notifications_mark_read", { id }, options)),
+	notificationsClear: (options?: InvokeOptions) => typedError<number, UiError_Serialize>(__TAURI_INVOKE("notifications_clear", undefined, options)),
+	notificationsTest: (options?: InvokeOptions) => typedError<NotificationRecord_Serialize | null, UiError_Serialize>(__TAURI_INVOKE("notifications_test", undefined, options)),
 	schedulesList: (options?: InvokeOptions) => typedError<Schedule_Serialize[], UiError_Serialize>(__TAURI_INVOKE("schedules_list", undefined, options)),
 	schedulesUpsert: (input: ScheduleInput_Deserialize, options?: InvokeOptions) => typedError<Schedule_Serialize, UiError_Serialize>(__TAURI_INVOKE("schedules_upsert", { input }, options)),
 	schedulesDelete: (id: string, options?: InvokeOptions) => typedError<null, UiError_Serialize>(__TAURI_INVOKE("schedules_delete", { id }, options)),
@@ -81,8 +119,11 @@ export const commands = {
 
 /** Events */
 export const events = {
+	appNotificationEvent: makeEvent<AppNotificationEvent_Serialize, AppNotificationEvent_Deserialize>("app-notification-event"),
+	dupProgressEvent: makeEvent<DupProgressEvent, DupProgressEvent>("dup-progress-event"),
 	folderActivityEvent: makeEvent<FolderActivityEvent, FolderActivityEvent>("folder-activity-event"),
 	folderStatusEvent: makeEvent<FolderStatusEvent_Serialize, FolderStatusEvent_Deserialize>("folder-status-event"),
+	trayNavigateEvent: makeEvent<TrayNavigateEvent, TrayNavigateEvent>("tray-navigate-event"),
 };
 
 /* Types */
@@ -137,6 +178,15 @@ export type AppInfo = {
 	schemaVersion: number,
 };
 
+/**  Batched / throttled user notification delivered to the frontend shell. */
+export type AppNotificationEvent = AppNotificationEvent_Serialize | AppNotificationEvent_Deserialize;
+
+/**  Batched / throttled user notification delivered to the frontend shell. */
+export type AppNotificationEvent_Deserialize = NotificationRecord_Deserialize;
+
+/**  Batched / throttled user notification delivered to the frontend shell. */
+export type AppNotificationEvent_Serialize = NotificationRecord_Serialize;
+
 export type AppearanceSettings = AppearanceSettings_Serialize | AppearanceSettings_Deserialize;
 
 export type AppearanceSettings_Deserialize = {
@@ -153,6 +203,41 @@ export type CatchUpPolicy = "skip" | "run_once";
 
 /**  A file category (built-in or custom). `id` is stable; built-ins use their slug. */
 export type Category = Category_Serialize | Category_Deserialize;
+
+/**  Input for creating or editing a custom category. */
+export type CategoryInput = CategoryInput_Serialize | CategoryInput_Deserialize;
+
+/**  Input for creating or editing a custom category. */
+export type CategoryInput_Deserialize = {
+	name: string,
+	description?: string | null,
+	icon: string,
+	colorToken: string,
+	extensions: string[],
+	destinationPath?: string | null,
+	priority: number,
+	enabled: boolean,
+};
+
+/**  Input for creating or editing a custom category. */
+export type CategoryInput_Serialize = {
+	name: string,
+	description: string | null,
+	icon: string,
+	colorToken: string,
+	extensions: string[],
+	destinationPath: string | null,
+	priority: number,
+	enabled: boolean,
+};
+
+export type CategoryStorageStat = {
+	categoryId: string,
+	categoryName: string,
+	colorToken: string,
+	fileCount: number | null,
+	totalBytes: number | null,
+};
 
 export type CategoryUsage = {
 	category: string,
@@ -208,9 +293,86 @@ export type Condition_Deserialize = { kind: "text"; field: TextFieldKind; op: Te
 
 export type Condition_Serialize = { kind: "text"; field: TextFieldKind; op: TextOp; value: string; case_sensitive: boolean } | { kind: "category"; category_id: string; negate: boolean } | { kind: "size"; op: SizeOp; value: number; max_value: number | null; unit: SizeUnit } | { kind: "date"; field: DateField; op: DateConditionOp } | { kind: "location"; op: LocationOp_Serialize } | { kind: "hidden"; is_hidden: boolean } | { kind: "empty_file"; is_empty: boolean } | { kind: "duplicate_status"; is_duplicate: boolean } | { kind: "content_hash"; hash: string } | { kind: "filename_glob"; pattern: string; case_sensitive: boolean } | { kind: "extension_group"; extensions: string[] };
 
+export type ConfigImportMode = "merge" | "replace";
+
+export type ConfigImportPreview = {
+	schemaVersion: number,
+	exportedAt: number | null,
+	settingsChanges: SettingsDiffItem[],
+	foldersToAdd: string[],
+	foldersToUpdate: string[],
+	foldersUnchanged: string[],
+	categoriesToAdd: string[],
+	categoriesToUpdate: string[],
+	exclusionsToAdd: string[],
+	exclusionsUnchanged: string[],
+	rulesToAdd: string[],
+	rulesToUpdate: string[],
+	forcedDisabledRuleCount: number,
+	warnings: string[],
+};
+
+export type ConfigImportReport = {
+	mode: ConfigImportMode,
+	foldersImported: number,
+	categoriesImported: number,
+	exclusionsImported: number,
+	rulesImportedDisabled: number,
+	warnings: string[],
+};
+
 export type ConflictPolicy = "auto_rename" | "skip" | "ask" | "keep_both";
 
 export type CpuPreference = "low" | "balanced" | "high";
+
+export type DailyActivityPoint = {
+	date: string,
+	count: number | null,
+};
+
+export type DashboardStats = DashboardStats_Serialize | DashboardStats_Deserialize;
+
+export type DashboardStats_Deserialize = {
+	filesOrganizedTotal: number | null,
+	filesOrganizedToday: number | null,
+	filesOrganizedThisWeek: number | null,
+	totalBytesOrganized: number | null,
+	activeFoldersCount: number,
+	totalFoldersCount: number,
+	activeRulesCount: number,
+	totalRulesCount: number,
+	pendingReviewCount: number,
+	failedOperationsCount: number,
+	totalTrackedFiles: number | null,
+	totalTrackedBytes: number | null,
+	duplicateGroupsCount: number,
+	duplicateWastedBytes: number | null,
+	categoryBreakdown: CategoryStorageStat[],
+	topRules: RulePerformanceStat_Deserialize[],
+	dailyActivity: DailyActivityPoint[],
+	recentOperations: OperationView_Deserialize[],
+};
+
+export type DashboardStats_Serialize = {
+	filesOrganizedTotal: number | null,
+	filesOrganizedToday: number | null,
+	filesOrganizedThisWeek: number | null,
+	totalBytesOrganized: number | null,
+	activeFoldersCount: number,
+	totalFoldersCount: number,
+	activeRulesCount: number,
+	totalRulesCount: number,
+	pendingReviewCount: number,
+	failedOperationsCount: number,
+	totalTrackedFiles: number | null,
+	totalTrackedBytes: number | null,
+	duplicateGroupsCount: number,
+	duplicateWastedBytes: number | null,
+	categoryBreakdown: CategoryStorageStat[],
+	topRules: RulePerformanceStat_Serialize[],
+	dailyActivity: DailyActivityPoint[],
+	recentOperations: OperationView_Serialize[],
+};
 
 export type DateConditionOp = { op: "before"; date: string } | { op: "after"; date: string } | { op: "within_range"; start: string; end: string } | { op: "older_than_days"; days: number } | { op: "newer_than_days"; days: number } | { op: "today" } | { op: "yesterday" } | { op: "this_week" } | { op: "this_month" } | { op: "this_year" };
 
@@ -221,7 +383,162 @@ export type DatePlacement = "prefix" | "suffix";
 /**  Which timestamp on the file populates `{year}`, `{month}`, `{day}`, `{date}`, `{month_name}` (FR-071). */
 export type DateSource = "modified" | "created" | "added" | "now";
 
+export type DbMaintenanceReport = {
+	freelistPagesBefore: number | null,
+	freelistPagesAfter: number | null,
+	sizeBytesBefore: number | null,
+	sizeBytesAfter: number | null,
+	completedAtMs: number | null,
+};
+
 export type Density = "comfortable" | "compact";
+
+export type DupAction = DupAction_Serialize | DupAction_Deserialize;
+
+export type DupActionReport = DupActionReport_Serialize | DupActionReport_Deserialize;
+
+export type DupActionReport_Deserialize = {
+	batchId?: string | null,
+	affected: number,
+	skipped: string[],
+	updatedGroup?: DuplicateGroupSummary_Deserialize | null,
+};
+
+export type DupActionReport_Serialize = {
+	batchId: string | null,
+	affected: number,
+	skipped: string[],
+	updatedGroup: DuplicateGroupSummary_Serialize | null,
+};
+
+export type DupAction_Deserialize = { kind: "keep"; group_id: string; file_record_id: string } | { kind: "move_to_review"; group_id: string; file_record_ids?: string[] | null; review_dir?: string | null } | { kind: "trash"; group_id: string; file_record_ids?: string[] | null; confirmed: boolean } | { kind: "ignore"; group_id: string; ignored: boolean };
+
+export type DupAction_Serialize = { kind: "keep"; group_id: string; file_record_id: string } | { kind: "move_to_review"; group_id: string; file_record_ids: string[] | null; review_dir: string | null } | { kind: "trash"; group_id: string; file_record_ids: string[] | null; confirmed: boolean } | { kind: "ignore"; group_id: string; ignored: boolean };
+
+export type DupExportFormat = "csv" | "json";
+
+/**  Progress update emitted during duplicate scanning (`dup://progress` in ARCHITECTURE.md §6). */
+export type DupProgressEvent = {
+	hashed: number,
+	total: number,
+	bytes: number | null,
+};
+
+export type DuplicateGroupSummary = DuplicateGroupSummary_Serialize | DuplicateGroupSummary_Deserialize;
+
+export type DuplicateGroupSummary_Deserialize = {
+	id: string,
+	contentHash: string,
+	fileSize: number | null,
+	ignored: boolean,
+	copyCount: number,
+	wastedBytes: number | null,
+	allSameName: boolean,
+	sameContentDifferentNames: boolean,
+	createdAt: number | null,
+	members: DuplicateMemberView_Deserialize[],
+};
+
+export type DuplicateGroupSummary_Serialize = {
+	id: string,
+	contentHash: string,
+	fileSize: number | null,
+	ignored: boolean,
+	copyCount: number,
+	wastedBytes: number | null,
+	allSameName: boolean,
+	sameContentDifferentNames: boolean,
+	createdAt: number | null,
+	members: DuplicateMemberView_Serialize[],
+};
+
+export type DuplicateGroupsResponse = DuplicateGroupsResponse_Serialize | DuplicateGroupsResponse_Deserialize;
+
+export type DuplicateGroupsResponse_Deserialize = {
+	totals: DuplicateSummaryTotals,
+	groups: DuplicateGroupSummary_Deserialize[],
+};
+
+export type DuplicateGroupsResponse_Serialize = {
+	totals: DuplicateSummaryTotals,
+	groups: DuplicateGroupSummary_Serialize[],
+};
+
+export type DuplicateMemberView = DuplicateMemberView_Serialize | DuplicateMemberView_Deserialize;
+
+export type DuplicateMemberView_Deserialize = {
+	fileRecordId: string,
+	folderId: string,
+	path: string,
+	filename: string,
+	extension?: string | null,
+	size: number | null,
+	createdMs: number | null,
+	modifiedMs: number | null,
+	isKeeper: boolean,
+	exists: boolean,
+};
+
+export type DuplicateMemberView_Serialize = {
+	fileRecordId: string,
+	folderId: string,
+	path: string,
+	filename: string,
+	extension: string | null,
+	size: number | null,
+	createdMs: number | null,
+	modifiedMs: number | null,
+	isKeeper: boolean,
+	exists: boolean,
+};
+
+export type DuplicateScanOptions = DuplicateScanOptions_Serialize | DuplicateScanOptions_Deserialize;
+
+export type DuplicateScanOptions_Deserialize = {
+	/**  Limit scanning to specific monitored folder IDs (`None` = all enabled monitored folders). */
+	folderIds?: string[] | null,
+	/**  When `true`, also treat 0-byte files as duplicate candidates (`wasted_bytes = 0`). */
+	includeEmpty?: boolean,
+};
+
+export type DuplicateScanOptions_Serialize = {
+	/**  Limit scanning to specific monitored folder IDs (`None` = all enabled monitored folders). */
+	folderIds: string[] | null,
+	/**  When `true`, also treat 0-byte files as duplicate candidates (`wasted_bytes = 0`). */
+	includeEmpty: boolean,
+};
+
+export type DuplicateScanReport = DuplicateScanReport_Serialize | DuplicateScanReport_Deserialize;
+
+export type DuplicateScanReport_Deserialize = {
+	filesScanned: number,
+	uniqueSizeSkipped: number,
+	partialHashed: number,
+	fullHashed: number,
+	cacheHits: number,
+	groupsFound: number,
+	totalWastedBytes: number | null,
+	groups: DuplicateGroupsResponse_Deserialize,
+};
+
+export type DuplicateScanReport_Serialize = {
+	filesScanned: number,
+	uniqueSizeSkipped: number,
+	partialHashed: number,
+	fullHashed: number,
+	cacheHits: number,
+	groupsFound: number,
+	totalWastedBytes: number | null,
+	groups: DuplicateGroupsResponse_Serialize,
+};
+
+export type DuplicateSummaryTotals = {
+	totalGroups: number,
+	activeGroups: number,
+	ignoredGroups: number,
+	totalDuplicateCopies: number,
+	totalWastedBytes: number | null,
+};
 
 /**  Stable error codes. The UI switches on these; never rename a variant. */
 export type ErrorCode = "database" | "io" | "permission_denied" | "not_found" | "validation" | "internal";
@@ -231,6 +548,40 @@ export type EvaluatedAction = {
 	ruleName: string,
 	op: PlannedOp,
 };
+
+export type ExclusionEntry = ExclusionEntry_Serialize | ExclusionEntry_Deserialize;
+
+export type ExclusionEntry_Deserialize = {
+	id: string,
+	folderId?: string | null,
+	path: string,
+	exclusionType: ExclusionKind,
+	createdAt: number | null,
+};
+
+export type ExclusionEntry_Serialize = {
+	id: string,
+	folderId: string | null,
+	path: string,
+	exclusionType: ExclusionKind,
+	createdAt: number | null,
+};
+
+export type ExclusionInput = ExclusionInput_Serialize | ExclusionInput_Deserialize;
+
+export type ExclusionInput_Deserialize = {
+	folderId?: string | null,
+	path: string,
+	exclusionType: ExclusionKind,
+};
+
+export type ExclusionInput_Serialize = {
+	folderId: string | null,
+	path: string,
+	exclusionType: ExclusionKind,
+};
+
+export type ExclusionKind = "path" | "glob" | "extension";
 
 export type ExecutionMode = "first_match" | "continue" | "stop_after_move" | "stop_after_action" | "sequential";
 
@@ -359,6 +710,46 @@ export type GeneralSettings_Serialize = {
 /**  Standard macOS folders offered in onboarding (FR-002). */
 export type KnownFolder = "downloads" | "desktop" | "documents" | "pictures" | "movies" | "music";
 
+export type LicenseActivationSource = "offline_key" | "online_provider";
+
+export type LicenseEdition = "lifetime" | "pro" | "trial";
+
+export type LicenseStateKind = "unlicensed" | "active_offline" | "active_online" | "expired" | "invalid";
+
+export type LicenseStatus = LicenseStatus_Serialize | LicenseStatus_Deserialize;
+
+export type LicenseStatus_Deserialize = {
+	state: LicenseStateKind,
+	licensed: boolean,
+	edition?: LicenseEdition | null,
+	source?: LicenseActivationSource | null,
+	licenseId?: string | null,
+	maskedKey?: string | null,
+	customerHint?: string | null,
+	providerName?: string | null,
+	onlineProviderConfigured: boolean,
+	deviceLimit?: number | null,
+	activatedAtMs?: number | null,
+	expiresAtMs?: number | null,
+	lastError?: string | null,
+};
+
+export type LicenseStatus_Serialize = {
+	state: LicenseStateKind,
+	licensed: boolean,
+	edition: LicenseEdition | null,
+	source: LicenseActivationSource | null,
+	licenseId: string | null,
+	maskedKey: string | null,
+	customerHint: string | null,
+	providerName: string | null,
+	onlineProviderConfigured: boolean,
+	deviceLimit: number | null,
+	activatedAtMs: number | null,
+	expiresAtMs: number | null,
+	lastError: string | null,
+};
+
 export type LocationOp = LocationOp_Serialize | LocationOp_Deserialize;
 
 export type LocationOp_Deserialize = { op: "source_folder_equals"; folder: string } | { op: "source_folder_contains"; text: string } | { op: "inside_directory"; path: string } | { op: "inside_subdirectory"; subpath?: string | null };
@@ -366,6 +757,8 @@ export type LocationOp_Deserialize = { op: "source_folder_equals"; folder: strin
 export type LocationOp_Serialize = { op: "source_folder_equals"; folder: string } | { op: "source_folder_contains"; text: string } | { op: "inside_directory"; path: string } | { op: "inside_subdirectory"; subpath: string | null };
 
 export type LogLevel = "normal" | "verbose";
+
+export type LoginItemStatus = "enabled" | "requires_approval" | "not_registered" | "not_found" | "unsupported";
 
 export type MonitoredFolder = MonitoredFolder_Serialize | MonitoredFolder_Deserialize;
 
@@ -440,6 +833,84 @@ export type MonitoringStatus_Serialize = {
 	paused: boolean,
 	folders: FolderRuntime_Serialize[],
 };
+
+export type NotificationEventPrefs = NotificationEventPrefs_Serialize | NotificationEventPrefs_Deserialize;
+
+export type NotificationEventPrefs_Deserialize = {
+	successSummary?: boolean,
+	largeBatchDone?: boolean,
+	failure?: boolean,
+	permissionIssue?: boolean,
+	destinationUnavailable?: boolean,
+	duplicatesFound?: boolean,
+	monitoringStopped?: boolean,
+};
+
+export type NotificationEventPrefs_Serialize = {
+	successSummary: boolean,
+	largeBatchDone: boolean,
+	failure: boolean,
+	permissionIssue: boolean,
+	destinationUnavailable: boolean,
+	duplicatesFound: boolean,
+	monitoringStopped: boolean,
+};
+
+export type NotificationKind = "success_summary" | "large_batch_done" | "failure" | "permission_issue" | "destination_unavailable" | "duplicates_found" | "monitoring_stopped";
+
+export type NotificationRecord = NotificationRecord_Serialize | NotificationRecord_Deserialize;
+
+export type NotificationRecord_Deserialize = {
+	id: string,
+	kind: NotificationKind,
+	severity: NotificationSeverity,
+	title: string,
+	body: string,
+	count: number,
+	batchCount: number,
+	folderId?: string | null,
+	createdAtMs: number | null,
+	read: boolean,
+};
+
+export type NotificationRecord_Serialize = {
+	id: string,
+	kind: NotificationKind,
+	severity: NotificationSeverity,
+	title: string,
+	body: string,
+	count: number,
+	batchCount: number,
+	folderId: string | null,
+	createdAtMs: number | null,
+	read: boolean,
+};
+
+export type NotificationSettings = NotificationSettings_Serialize | NotificationSettings_Deserialize;
+
+export type NotificationSettings_Deserialize = {
+	enabled?: boolean,
+	/**  Seconds to coalesce related events into a single summary notification (FR-202). */
+	batchWindowSecs?: number,
+	/**  Minimum seconds between emitted notifications of the same event type (FR-202). */
+	cooldownSecs?: number,
+	/**  Minimum files in a batch before emitting a `large_batch_done` notification (FR-200). */
+	largeBatchThreshold?: number,
+	perType?: NotificationEventPrefs_Deserialize,
+};
+
+export type NotificationSettings_Serialize = {
+	enabled: boolean,
+	/**  Seconds to coalesce related events into a single summary notification (FR-202). */
+	batchWindowSecs: number,
+	/**  Minimum seconds between emitted notifications of the same event type (FR-202). */
+	cooldownSecs: number,
+	/**  Minimum files in a batch before emitting a `large_batch_done` notification (FR-200). */
+	largeBatchThreshold: number,
+	perType: NotificationEventPrefs_Serialize,
+};
+
+export type NotificationSeverity = "info" | "success" | "warning" | "error";
 
 export type OnboardingCompleteReport = OnboardingCompleteReport_Serialize | OnboardingCompleteReport_Deserialize;
 
@@ -833,6 +1304,28 @@ export type RuleExecutionMode = "first_match" | "continue" | "stop_after_move" |
 
 export type RuleOrigin = "user" | "preset" | "import";
 
+export type RulePerformanceStat = RulePerformanceStat_Serialize | RulePerformanceStat_Deserialize;
+
+export type RulePerformanceStat_Deserialize = {
+	ruleId: string,
+	ruleName: string,
+	enabled: boolean,
+	matchedOps: number | null,
+	bytesOrganized: number | null,
+	failedOps: number,
+	lastRunAtMs?: number | null,
+};
+
+export type RulePerformanceStat_Serialize = {
+	ruleId: string,
+	ruleName: string,
+	enabled: boolean,
+	matchedOps: number | null,
+	bytesOrganized: number | null,
+	failedOps: number,
+	lastRunAtMs: number | null,
+};
+
 export type RuleTemplate = RuleTemplate_Serialize | RuleTemplate_Deserialize;
 
 export type RuleTemplate_Deserialize = {
@@ -1021,13 +1514,20 @@ export type Schedule_Serialize = {
 
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
+export type SettingsDiffItem = {
+	section: string,
+	current: string,
+	incoming: string,
+};
+
 export type Settings_Deserialize = {
-	general: GeneralSettings_Deserialize,
-	monitoring: MonitoringSettings_Deserialize,
-	organization: OrganizationSettings_Deserialize,
-	performance: PerformanceSettings_Deserialize,
-	appearance: AppearanceSettings_Deserialize,
-	privacy: PrivacySettings_Deserialize,
+	general?: GeneralSettings_Deserialize,
+	monitoring?: MonitoringSettings_Deserialize,
+	organization?: OrganizationSettings_Deserialize,
+	performance?: PerformanceSettings_Deserialize,
+	appearance?: AppearanceSettings_Deserialize,
+	privacy?: PrivacySettings_Deserialize,
+	notifications?: NotificationSettings_Deserialize,
 };
 
 export type Settings_Serialize = {
@@ -1037,6 +1537,7 @@ export type Settings_Serialize = {
 	performance: PerformanceSettings_Serialize,
 	appearance: AppearanceSettings_Serialize,
 	privacy: PrivacySettings_Serialize,
+	notifications: NotificationSettings_Serialize,
 };
 
 export type SizeOp = "greater_than" | "less_than" | "equals" | "between";
@@ -1050,6 +1551,25 @@ export type SkippedPlanItem = {
 	reason: StaleReason,
 	message: string,
 };
+
+export type SmartDownloadCategoryInfo = {
+	categoryId: string,
+	categoryName: string,
+	defaultSubpath: string,
+};
+
+export type SmartOrganizerCatalog = {
+	defaultScreenshotPatterns: string[],
+	defaultInvoiceKeywords: string[],
+	allowedOldFileDays: number[],
+	downloadCategories: SmartDownloadCategoryInfo[],
+};
+
+export type SmartOrganizerSpec = SmartOrganizerSpec_Serialize | SmartOrganizerSpec_Deserialize;
+
+export type SmartOrganizerSpec_Deserialize = { kind: "screenshots"; extra_patterns?: string[]; destination?: string | null; source_folders?: string[] } | { kind: "invoices"; keywords?: string[]; destination?: string | null; source_folders?: string[] } | { kind: "download_category"; category_id: string; destination?: string | null; source_folders?: string[] } | { kind: "old_files"; days: number; destination?: string | null; source_folders?: string[] };
+
+export type SmartOrganizerSpec_Serialize = { kind: "screenshots"; extra_patterns: string[]; destination: string | null; source_folders: string[] } | { kind: "invoices"; keywords: string[]; destination: string | null; source_folders: string[] } | { kind: "download_category"; category_id: string; destination: string | null; source_folders: string[] } | { kind: "old_files"; days: number; destination: string | null; source_folders: string[] };
 
 /**  Reason a plan item was skipped as stale during execution (`FR-086`, `SAFETY_MODEL.md` S6). */
 export type StaleReason = "source_missing" | "identity_changed" | "modified_since_plan" | "destination_occupied_since_plan" | "blocked_by_conflict";
@@ -1089,6 +1609,11 @@ export type TextFieldKind = "name" | "stem" | "extension" | "mime_type" | "full_
 export type TextOp = "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "matches_regex";
 
 export type ThemeMode = "system" | "light" | "dark";
+
+/**  Menu bar tray navigation event emitted when the user opens a view from the tray (`P7-T01`). */
+export type TrayNavigateEvent = {
+	path: string,
+};
 
 /**  Error shape returned by every Tauri command. */
 export type UiError = UiError_Serialize | UiError_Deserialize;

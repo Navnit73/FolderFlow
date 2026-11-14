@@ -3,12 +3,23 @@ import { PageHeader } from "@/components/PageHeader";
 import { cn } from "@/lib/cn";
 import { AboutSection } from "./AboutSection";
 import { AppearanceSection } from "./AppearanceSection";
+import { BackupSection } from "./BackupSection";
 import { GeneralSection } from "./GeneralSection";
+import { MonitoringSection } from "./MonitoringSection";
+import { NotificationsSection } from "./NotificationsSection";
+import { OrganizationSection } from "./OrganizationSection";
+import { PerformanceSection } from "./PerformanceSection";
+import { PrivacySection } from "./PrivacySection";
 
-/** Sections ship as their backing features land (see docs/PLAN_TRACKER.md). */
 const SECTIONS = [
   { id: "general", label: "General", Component: GeneralSection },
+  { id: "monitoring", label: "Monitoring", Component: MonitoringSection },
+  { id: "organization", label: "Organization", Component: OrganizationSection },
+  { id: "performance", label: "Performance", Component: PerformanceSection },
+  { id: "notifications", label: "Notifications", Component: NotificationsSection },
   { id: "appearance", label: "Appearance", Component: AppearanceSection },
+  { id: "privacy", label: "Privacy", Component: PrivacySection },
+  { id: "backup", label: "Backup", Component: BackupSection },
   { id: "about", label: "About", Component: AboutSection },
 ] as const;
 

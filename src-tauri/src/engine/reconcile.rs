@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use crate::database::{repo_files, repo_folders, Db};
+use crate::database::{repo_exclusions, repo_files, repo_folders, Db};
 use crate::engine::classifier::Classifier;
 use crate::engine::ignore::IgnoreRules;
 use crate::engine::paths::PathError;
@@ -42,19 +42,20 @@ impl FolderScanSpec {
             id: f.id.clone(),
             path: PathBuf::from(&f.path),
             recursive: f.recursive,
-            rules: IgnoreRules {
-                ignore_hidden: m.ignore_hidden_files,
-                ignore_temporary: m.ignore_temporary_files,
-                include_extensions: f.settings.include_extensions.clone(),
-                exclude_extensions: f.settings.exclude_extensions.clone(),
-                excluded_dirs: f
-                    .settings
-                    .excluded_subfolders
-                    .iter()
-                    .map(PathBuf::from)
-                    .collect(),
-            },
+            rules: IgnoreRules::from_folder_and_monitoring(m, &f.settings, Vec::new()),
         }
+    }
+
+    /// Loads per-folder and global exclusions from SQLite (`BUG-026`) into the scan spec.
+    pub async fn load_for_folder(
+        db: &Db,
+        f: &MonitoredFolder,
+        m: &MonitoringSettings,
+    ) -> AppResult<Self> {
+        let mut spec = Self::from_folder(f, m);
+        let entries = repo_exclusions::list_for_folder(db, &f.id).await?;
+        spec.rules.apply_db_exclusions(&entries);
+        Ok(spec)
     }
 }
 

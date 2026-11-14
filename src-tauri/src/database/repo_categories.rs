@@ -133,3 +133,20 @@ pub async fn delete_custom(db: &Db, id: &str) -> AppResult<bool> {
         .await?;
     Ok(r.rows_affected() > 0)
 }
+
+/// Assigns priorities `10, 20, 30, ...` in the provided ID order inside a single transaction.
+pub async fn reorder(db: &Db, ordered_ids: &[String]) -> AppResult<()> {
+    let now = now_ms();
+    let mut tx = db.begin().await?;
+    for (idx, id) in ordered_ids.iter().enumerate() {
+        let priority = i32::try_from((idx + 1) * 10).unwrap_or(1000);
+        sqlx::query("UPDATE categories SET priority = ?2, updated_at = ?3 WHERE id = ?1")
+            .bind(id)
+            .bind(priority)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}

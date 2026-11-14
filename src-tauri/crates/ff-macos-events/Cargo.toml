@@ -1,0 +1,23 @@
+[package]
+name = "ff-macos-events"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSDictionary",
+  "NSNotification",
+  "NSObject",
+  "NSOperation",
+  "NSString",
+  "NSURL",
+] }
+
+[lints.clippy]
+unwrap_used = "deny"
+

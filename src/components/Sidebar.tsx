@@ -1,23 +1,44 @@
-import { NavLink } from "react-router";
+import { Link, NavLink } from "react-router";
 import { NAV_ITEMS } from "@/app/navigation";
 import { cn } from "@/lib/cn";
 import { folderStatus } from "@/lib/folderStatus";
 import { useFolders } from "@/stores/folders";
+import { useLicense } from "@/stores/license";
 import { StatusDot } from "./StatusDot";
 
-/** Overall monitoring indicator for the sidebar footer. */
+/** Overall monitoring & license indicators for the sidebar footer (`DESIGN_SYSTEM.md §5`). */
 function MonitoringIndicator() {
   const { folders, runtime, paused, status } = useFolders();
-  if (status !== "ready") return null;
-  const active = folders.filter((f) => f.enabled);
-  let view: { tone: "active" | "paused" | "error" | "idle"; label: string };
-  if (active.length === 0) view = { tone: "idle", label: "No folders monitored" };
-  else if (paused) view = { tone: "paused", label: "Monitoring paused" };
-  else if (active.some((f) => folderStatus(f, runtime[f.id]).tone === "error")) view = { tone: "error", label: "Needs attention" };
-  else view = { tone: "active", label: "Monitoring" };
+  const { license, status: licStatus } = useLicense();
+
+  if (status !== "ready" && licStatus !== "ready") return null;
+
+  let view: { tone: "active" | "paused" | "error" | "idle"; label: string } | null = null;
+  if (status === "ready") {
+    const active = folders.filter((f) => f.enabled);
+    if (active.length === 0) view = { tone: "idle", label: "No folders monitored" };
+    else if (paused) view = { tone: "paused", label: "Monitoring paused" };
+    else if (active.some((f) => folderStatus(f, runtime[f.id]).tone === "error")) {
+      view = { tone: "error", label: "Needs attention" };
+    } else {
+      view = { tone: "active", label: "Monitoring" };
+    }
+  }
+
   return (
-    <div className="border-t border-border px-4 py-3 text-fg-muted">
-      <StatusDot tone={view.tone} label={view.label} className="text-xs" />
+    <div className="space-y-1.5 border-t border-border px-4 py-3 text-fg-muted">
+      {view && <StatusDot tone={view.tone} label={view.label} className="text-xs" />}
+      {licStatus === "ready" && license && (
+        <Link
+          to="/license"
+          className={cn(
+            "block text-xs hover:underline",
+            license.licensed ? "font-medium text-success" : "text-fg-subtle hover:text-fg",
+          )}
+        >
+          {license.licensed ? "Licensed ✓" : "Unlicensed"}
+        </Link>
+      )}
     </div>
   );
 }

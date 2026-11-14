@@ -1,7 +1,17 @@
-//! Security configuration. License and Keychain handling arrive in Phase 7.
+//! Security configuration, Keychain credential store, and offline/online licensing (Phase 7).
 //!
-//! The tests here guard the least-privilege configuration (NFR-011, NFR-012,
+//! The `config_tests` guard the least-privilege configuration (NFR-011, NFR-012,
 //! SAFETY_MODEL S1/S3/S11) so it cannot be loosened by accident.
+
+pub mod keychain;
+pub mod license;
+
+pub use keychain::{InMemoryKeychain, KeychainBackend, MacOsKeychain};
+pub use license::{
+    DeviceContext, HttpJsonLicenseProvider, HttpProviderConfig, LicenseActivationSource,
+    LicenseEdition, LicenseProvider, LicenseService, LicenseStateKind, LicenseStatus,
+    ProviderActivationResult, SignedLicenseFile, SignedLicensePayload, UnconfiguredOnlineProvider,
+};
 
 #[cfg(test)]
 mod config_tests {

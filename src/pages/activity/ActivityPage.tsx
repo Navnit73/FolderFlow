@@ -391,6 +391,7 @@ export function ActivityPage() {
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
+            data-ff-search="true"
             aria-label="Search activity"
             placeholder="Search file names or paths…"
             value={filter.search ?? ""}

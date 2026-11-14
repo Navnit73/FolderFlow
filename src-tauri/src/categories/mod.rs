@@ -179,6 +179,31 @@ impl CategoryService {
             }
         }
     }
+
+    /// Updates category priorities following the given ordered list of IDs (`FR-170`).
+    /// Unknown IDs are rejected; any existing categories omitted from `ordered_ids` keep relative order afterward.
+    pub async fn reorder(&self, ordered_ids: Vec<String>) -> AppResult<Vec<Category>> {
+        let existing = self.list().await?;
+        let mut seen = std::collections::HashSet::with_capacity(ordered_ids.len());
+        let mut final_order = Vec::with_capacity(existing.len());
+
+        for id in ordered_ids {
+            if !existing.iter().any(|c| c.id == id) {
+                return Err(AppError::NotFound(format!("Category {id}")));
+            }
+            if seen.insert(id.clone()) {
+                final_order.push(id);
+            }
+        }
+        for c in existing {
+            if seen.insert(c.id.clone()) {
+                final_order.push(c.id);
+            }
+        }
+
+        repo_categories::reorder(&self.db, &final_order).await?;
+        self.list().await
+    }
 }
 
 #[cfg(test)]
@@ -285,5 +310,72 @@ mod tests {
             svc.create(input("documents", &["foo"])).await,
             Err(AppError::Validation { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn r_cat_04_reorder_persists_priority_order() {
+        let svc = service().await;
+        let custom = svc
+            .create(input("Receipts", &["rcpt"]))
+            .await
+            .expect("create");
+        let listed = svc.list().await.expect("list");
+        let original_first = listed[0].id.clone();
+
+        let reversed_two = vec!["images".to_owned(), custom.id.clone(), original_first];
+        let reordered = svc.reorder(reversed_two).await.expect("reorder");
+        assert_eq!(reordered[0].id, "images");
+        assert_eq!(reordered[0].priority, 10);
+        assert_eq!(reordered[1].id, custom.id);
+        assert_eq!(reordered[1].priority, 20);
+
+        assert!(matches!(
+            svc.reorder(vec!["does-not-exist".into()]).await,
+            Err(AppError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn edge_06_custom_category_and_priority_drive_live_classifier_resolution() {
+        use crate::engine::classifier::Classifier;
+
+        let svc = service().await;
+        // Override .pdf at higher priority (smaller number = higher priority than built-in documents priority 10)
+        let legal = svc
+            .create(CategoryInput {
+                name: "Legal Briefs".into(),
+                description: None,
+                icon: "scale".into(),
+                color_token: "cat-documents".into(),
+                extensions: vec!["pdf".into(), "parquet".into()],
+                destination_path: None,
+                priority: 5,
+                enabled: true,
+            })
+            .await
+            .expect("create legal");
+
+        let cats = svc.list().await.expect("list");
+        let cls = Classifier::new(cats);
+        assert_eq!(cls.classify("brief.pdf", None, false).category, legal.id);
+        assert_eq!(
+            cls.classify("table.parquet", None, false).category,
+            legal.id
+        );
+
+        // Reordering `"documents"` ahead of `"Legal Briefs"` restores `"documents"` precedence for `.pdf`
+        let reordered = svc
+            .reorder(vec!["documents".to_owned(), legal.id.clone()])
+            .await
+            .expect("reorder");
+        let cls2 = Classifier::new(reordered);
+        assert_eq!(
+            cls2.classify("brief.pdf", None, false).category,
+            "documents"
+        );
+        assert_eq!(
+            cls2.classify("table.parquet", None, false).category,
+            legal.id
+        );
     }
 }
