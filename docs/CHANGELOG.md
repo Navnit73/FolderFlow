@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: SemVer.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-14
+
+### Added — Phase 9 (Production release)
+- Production macOS brand & installer assets (`assets/icon-source.svg`, `assets/dmg-background.png`, `scripts/render-brand-assets.mjs`, `src-tauri/icons/*`): replaced interim icon with a macOS squircle FolderFlow iconset (`icon.icns` + Retina PNGs) and a custom `660×400` DMG drag-to-Applications background.
+- Universal binary & bundle metadata (`src-tauri/tauri.conf.json`, `src-tauri/Info.plist`, `src-tauri/Entitlements.plist`): configured `universal-apple-darwin` (`arm64` + `x86_64`), `minimumSystemVersion: "13.0"`, `NSSupportsAutomaticGraphicsSwitching`, copyright metadata, `hardenedRuntime: true`, and least-privilege `Entitlements.plist` (non-sandboxed per `ADR-002` with zero JIT/unsigned-memory exemptions).
+- Release automation & clean-environment smoke verification (`scripts/release-macos.sh`, `scripts/smoke-test-macos.sh`, `.github/workflows/release.yml`, `src-tauri/tests/release_smoke.rs`): automated universal `.app`/`.dmg` build, SHA-256 checksums, Developer ID `codesign`/`notarytool`/`stapler` hooks (gated on `Q3` Apple Developer ID credentials), and end-to-end clean-environment smoke suite (`R-REL-01..03`, `R-SMOKE-01..08`).
+- SemVer `1.0.0` alignment (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/crates/ff-macos-events/Cargo.toml`, `src-tauri/tauri.conf.json`, frontend fixtures), `RELEASE_NOTES.md`, and end-user documentation (`docs/USER_GUIDE.md`).
+
 ### Added — Phase 8 (Quality assurance)
 - Spec §24.3 failure suite (`src-tauri/tests/failure_suite.rs`, `R-FAIL-01`..`12`): verified crash/fault recovery for interrupted moves/copies, corrupted DB + ledger errors, unavailable destinations, vanished sources, mid-execution destination collisions, `ENOSPC`, `EACCES`, unsafe/malformed config imports, watcher startup/runtime failures with restart backoff, event bursts/dedupe, and active download stability + stale snapshot aborts.
 - Performance benchmarks (`src-tauri/benches/folderflow_benches.rs`, `src-tauri/examples/bench_idle_monitor.rs`, `docs/BENCHMARKS.md`): empirical `1k`/`10k`/`50k`/`100k` Criterion measurements (`BENCH-01`..`05`) plus Darwin `/usr/bin/time -l` heavy RSS (`BENCH-06`) and real FSEvents idle CPU/RSS (`BENCH-07`), with initial `NFR-022` regression budgets derived from measured baselines.

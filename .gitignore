@@ -4,6 +4,7 @@ node_modules/
 
 # ── Frontend build / tooling output ─────────────────────────
 dist/
+dist-release/
 dist-ssr/
 .vite/
 *.tsbuildinfo

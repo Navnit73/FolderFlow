@@ -601,7 +601,7 @@ export async function installTauriMock(page: Page, options: TauriMockOptions): P
     });
 
     const appInfo: AppInfo = {
-      version: "0.1.0",
+      version: "1.0.0",
       dataDir: "/Users/demo/Library/Application Support/com.folderflow.desktop",
       logDir: "/Users/demo/Library/Logs/com.folderflow.desktop",
       databasePath: "/Users/demo/Library/Application Support/com.folderflow.desktop/folderflow.db",

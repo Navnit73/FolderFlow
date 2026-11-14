@@ -50,7 +50,7 @@ export function defaultSettings(): Settings {
 }
 
 export const appInfoFixture: AppInfo = {
-  version: "0.1.0",
+  version: "1.0.0",
   dataDir: "/tmp/ff/data",
   logDir: "/tmp/ff/logs",
   databasePath: "/tmp/ff/data/folderflow.db",

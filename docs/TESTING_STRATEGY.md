@@ -102,8 +102,8 @@ R-TRAY-01..02 · R-LOGIN-01 · R-SYS-01..03 · R-NOTIF-05 · R-KEY-01..02 · R-L
 ### Phase 8 — QA (implemented & verified)
 R-FAIL-01..12 (`src-tauri/tests/failure_suite.rs`: interrupt move, interrupt copy, corrupted DB & ledger failure, dest unavailable, source vanishes, dest appears mid-exec, ENOSPC, EACCES, corrupted/unsafe config, watcher error & restart, flood backpressure & duplicate dedupe, active-file stability & stale guard) · E2E-01..06 (`tests/e2e/app.spec.ts` over stateful Tauri IPC mock) · WCAG 2.1 AA automated audit (`UI-A11Y-01` token/overlay contrast matrix in `scripts/check-tokens.test.ts` + `@axe-core/playwright` across all 20 routes & onboarding in Light and Dark modes) · BENCH-01..07 (`src-tauri/benches/folderflow_benches.rs` + `src-tauri/examples/bench_idle_monitor.rs` recorded in `docs/BENCHMARKS.md`) · Security/supply-chain (`cargo deny check`, `cargo audit`, `pnpm audit --prod`, `cargo llvm-cov --summary-only`: `engine/` 92.90%, `rules/` 95.37%, `engine/safe_fs/` 95.07%)
 
-### Phase 9 — Release (8)
-Smoke tests on clean VMs: install, first launch, onboarding, organize, undo, restart persistence, offline, uninstall leaves user files intact.
+### Phase 9 — Release (implemented & verified locally; live Apple Developer signing & external macOS 13 VM runbook documented)
+`R-REL-01..03` & `R-SMOKE-01..08` (`src-tauri/tests/release_smoke.rs`: release manifest & `1.0.0` version parity, brand & DMG asset integrity, `USER_GUIDE.md` & `CHANGELOG.md` completeness, clean-DB onboarding, preview & organize, undo restoration, restart persistence, offline license activation & network-free organize, uninstall-leaves-user-files-intact, DMG/universal-binary/clean-HOME launch smoke via `scripts/smoke-test-macos.sh`)
 
 ## 6. CI gates (all must pass)
 

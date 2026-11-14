@@ -13,5 +13,7 @@
   <string>FolderFlow needs access to folders you chose on external drives to organize them. Your files never leave your Mac.</string>
   <key>NSNetworkVolumesUsageDescription</key>
   <string>FolderFlow needs access to folders you chose on network drives to organize them. Your files never leave your Mac.</string>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
 </dict>
 </plist>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  FolderFlow Hardened Runtime Entitlements (ADR-002, ADR-019, P9-T03).
+  Direct Developer ID distribution (non-sandboxed):
+  - App Sandbox is omitted because users select arbitrary folders and external
+    volumes monitored continuously in the background; folder access is governed
+    by macOS TCC prompts declared in Info.plist plus Rust PathAuthority.
+  - Zero JIT, unsigned-executable-memory, or library-validation exemptions are
+    requested: WKWebView runs JIT inside Apple's WebContent XPC service, and
+    FolderFlow executes no dynamic plugins or scripts (FR-051).
+-->
+<plist version="1.0">
+<dict/>
+</plist>
+
