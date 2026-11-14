@@ -10,7 +10,7 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ErrorState, LoadingState } from "@/components/States";
 import { Button } from "@/components/ui/button";
@@ -99,15 +99,23 @@ export function OnboardingPage() {
 
   const [recursive, setRecursive] = useState(false);
   const [confirmEnable, setConfirmEnable] = useState(false);
+  const initRef = useRef(false);
 
   useEffect(() => {
-    void load().then((loaded) => {
-      void loadResources();
-      if (loaded && !stepParam) {
-        void navigate(`/onboarding/${loaded.currentStep}`, { replace: true });
-      }
-    });
-  }, [load, loadResources, navigate, stepParam]);
+    if (initRef.current) return;
+    initRef.current = true;
+    const currentStatus = useOnboarding.getState().status;
+    if (currentStatus === "idle") {
+      void load();
+    }
+    void loadResources();
+  }, [load, loadResources]);
+
+  useEffect(() => {
+    if (status === "ready" && state && !stepParam) {
+      void navigate(`/onboarding/${state.currentStep}`, { replace: true });
+    }
+  }, [status, state, stepParam, navigate]);
 
   const parsedStep = Number(stepParam);
   const currentStep =

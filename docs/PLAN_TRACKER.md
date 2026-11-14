@@ -25,7 +25,7 @@
 | 2 | Filesystem engine | ✅ | 91 / 91 (77 Rust · 14 TS) | [phase-2](audits/phase-2.md) ✅ | 2026-11-13 |
 | 3 | Rule engine | ✅ | 67 / 40 (55 Rust · 12 TS) | [phase-3](audits/phase-3.md) ✅ | 2026-11-14 |
 | 4 | Safe operations | ✅ | 65 / 42 (60 Rust · 5 TS) | [phase-4](audits/phase-4.md) ✅ | 2026-11-14 |
-| 5 | Preview & automation | 🟨 | 0 / 30 | ⬜ | — |
+| 5 | Preview & automation | ✅ | 43 / 30 (33 Rust · 10 TS) | [phase-5](audits/phase-5.md) ✅ | 2026-11-14 |
 | 6 | Advanced features | ⬜ | 0 / 30 | ⬜ | — |
 | 7 | macOS integration | ⬜ | 0 / 18 | ⬜ | — |
 | 8 | Quality assurance | ⬜ | 0 / 20 | ⬜ | — |
@@ -195,16 +195,21 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests first | Status |
 |---|---|---|---|
-| P5-T01 | Planner: produces immutable `ExecutionPlan` from a `ReadOnlyFs` (type-level: cannot mutate) | R-PLAN-01..05 | ⬜ |
-| P5-T02 | Plan conflict detection: duplicate destinations, permissions, unavailable dest, rule conflicts | R-PLAN-06..10 | ⬜ |
-| P5-T03 | Plan executor with per-item revalidation (identity, size, mtime, dest) | R-EXEC-01..05 | ⬜ |
-| P5-T04 | Pipeline: watcher → stability → evaluate → execute, bounded with backpressure | R-PIPE-01..04 (integration) | ⬜ |
-| P5-T05 | Scheduler: intervals, daily/weekly, quiet hours, days of week, next-run calc, catch-up policy, no overlap | R-SCHED-01..08 | ⬜ |
-| P5-T06 | Preview screen (filters, search, deselect, execute w/ confirm, ⌘↩) | UI-PREV-01..04 | ⬜ |
-| P5-T07 | Scheduler screen | UI-SCHED-01..02 | ⬜ |
-| P5-T08 | Onboarding flow (6 steps) using scanner + planner, zero writes | UI-ONB-01..04, R-ONB-01 | ⬜ |
+| P5-T01 | Planner: produces immutable `ExecutionPlan` from a `ReadOnlyFs` (type-level: cannot mutate) | R-PLAN-01..05 | ✅ |
+| P5-T02 | Plan conflict detection: duplicate destinations, permissions, unavailable dest, rule conflicts | R-PLAN-06..10 | ✅ |
+| P5-T03 | Plan executor with per-item revalidation (identity, size, mtime, dest) | R-EXEC-01..05 | ✅ |
+| P5-T04 | Pipeline: watcher → stability → evaluate → execute, bounded with backpressure | R-PIPE-01..04 (integration) | ✅ |
+| P5-T05 | Scheduler: intervals, daily/weekly, quiet hours, days of week, next-run calc, catch-up policy, no overlap | R-SCHED-01..08 | ✅ |
+| P5-T06 | Preview screen (filters, search, deselect, execute w/ confirm, ⌘↩) | UI-PREV-01..04 | ✅ |
+| P5-T07 | Scheduler screen | UI-SCHED-01..02 | ✅ |
+| P5-T08 | Onboarding flow (6 steps) using scanner + planner, zero writes | UI-ONB-01..04, R-ONB-01 | ✅ |
 
-**Exit criteria:** dry-run zero-write test passes over 10k-file fixture (filesystem snapshot before/after identical); stale-plan test passes; scheduler time math covered incl. DST. Audit-5 recorded.
+**Exit criteria:** dry-run zero-write test passes over 10k-file fixture (filesystem snapshot before/after identical); stale-plan test passes; scheduler time math covered incl. DST. Audit-5 recorded. ✅ Met — see [audits/phase-5.md](audits/phase-5.md).
+
+**Phase 5 notes**
+- `AutomationPipeline` subscribes to `MonitorService` via `CompositeObserver` (`src-tauri/src/events.rs`), executes rules against stabilized files in bounded queues with overflow dirty-folder reconciliation, and honors both folder/rule schedule bindings and `Realtime` quiet hours (`BUG-023`).
+- `SchedulerService` persists schedules in SQLite (`repo_schedules`), calculates timezone/DST-safe next-run timestamps (`FixedClock`/`SystemClock`), respects quiet hours and bounded catch-up policies (`Skip`/`RunOnce`), guards concurrent runs with per-scope `try_lock`, and scans via shared `collect_folder_candidates` (`FolderScanSpec`, `BUG-022`).
+- `OnboardingService` persists progress in `settings` (`ONBOARDING_SETTINGS_KEY`), runs non-mutating scans using starter presets, and keeps starter-rule enablement unchecked until explicit confirmation (`R-ONB-01`, `UI-ONB-04`).
 
 ---
 

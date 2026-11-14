@@ -75,15 +75,16 @@ folderflow/
 │   │   │   ├── reconcile.rs      scan → upsert → delete unseen → report new/changed            [P2]
 │   │   │   ├── debounce.rs, stability.rs   pure state machines (caller supplies time)       [P2]
 │   │   │   ├── monitor.rs        MonitorService + one supervised task per folder (watcher, backoff, health) [P2]
-│   │   │   ├── planner.rs        ExecutionPlan (pure, read-only)
+│   │   │   ├── planner.rs        ExecutionPlan (pure, read-only, PreviewStore)              [P5]
 │   │   │   ├── organizer.rs      transactional move/copy/rename pipeline                       [P4]
 │   │   │   ├── operations.rs     state machine + write-ahead ledger (`LedgerToken`)            [P4]
 │   │   │   ├── conflicts.rs, recovery.rs, undo.rs, activity.rs                                 [P4]
-│   │   │   ├── scheduler.rs, pipeline.rs
+│   │   │   ├── scheduler.rs, pipeline.rs                                                       [P5]
 │   │   ├── categories/        built-in table + custom category service                        [P2]
 │   │   ├── folders/           monitored-folder registry, probe_access, overlap rule          [P2]
+│   │   ├── onboarding/        6-step onboarding state + non-mutating scan preview             [P5]
 │   │   ├── system/            macOS integration via objc2 (System Settings link)             [P2]
-│   │   ├── events.rs          typed events + TauriObserver                                    [P2]
+│   │   ├── events.rs          typed events + TauriObserver + CompositeObserver                 [P2/P5]
 │   │   ├── rules/ models.rs conditions.rs evaluator.rs templates.rs validate.rs presets.rs service.rs [P3]
 │   │   ├── duplicates/ hasher.rs cache.rs finder.rs
 │   │   ├── database/ pool.rs repo_*.rs
@@ -171,21 +172,21 @@ All commands are `async`, return `Result<T, UiError>`, and are exported to TS vi
 | | `template_preview` | `TemplatePreviewInput` → `TemplatePreviewOutput` |
 | | `rules_test_folder` | `(RuleDraft, folder_id)` → `RuleTestReport` (dry-run against scanned files) |
 | | `rules_pick_destination_folder` | → `Option<String>` (native folder picker; registers approved destination root) |
-| preview | `plan_create` | `PlanScope {folder?, rule?, files?}` → `PlanSummary` (+ `plan_id`) |
-| | `plan_items` | `{plan_id, filter, page}` → `Page<PlanItemView>` |
-| | `plan_execute` | `{plan_id, selected: Vec<ItemId>}` → `BatchId` (progress via events) |
-| | `plan_discard` | `plan_id` |
+| preview | `plan_create` | `PlanScope {folder?, rule?, files?}` → `PlanSummary` (`planId` cached in `PreviewStore`) |
+| | `plan_items` | `(plan_id, PlanItemFilter, limit, offset)` → `PlanItemsPage` |
+| | `plan_execute` | `(plan_id, selected_item_ids?, ConflictPolicy)` → `PlanExecutionReport` |
+| | `plan_discard` | `plan_id` → `bool` |
 | activity | `activity_list` | `{filter, page}` → `Page<OperationView>` |
 | | `activity_undo` | `UndoTarget::{Last, Ops(Vec), Batch}` → `UndoReport` |
 | | `activity_retry` / `activity_export_csv` / `activity_clear` | |
 | | `reveal_in_finder` | `op_id, which: Source\|Destination` (path resolved in Rust) |
 | review | `review_list` / `review_resolve` | conflicts in "ask" mode |
 | duplicates | `dup_scan` / `dup_groups` / `dup_action` / `dup_export` | |
-| schedules | `schedules_list/upsert/delete/set_enabled/run_now` | |
+| schedules | `schedules_list/upsert/delete/set_enabled/run_now` | SQLite schedules, toggle, manual run (`ScheduleRunOutcome`) |
 | dashboard | `dashboard_stats` | → `DashboardStats` |
 | config | `config_export` / `config_import_preview` / `config_import_apply` | |
 | license | `license_status/activate/activate_offline/deactivate` | |
-| onboarding | `onboarding_state` / `onboarding_set_step` / `onboarding_complete` | |
+| onboarding | `onboarding_state` / `onboarding_set_step` / `onboarding_scan_preview` / `onboarding_complete` / `onboarding_reset` | persistent wizard state + non-mutating starter scan |
 
 The frontend never receives a raw "move this path to that path" command. It only references IDs (folder, rule, plan, plan item, operation) that Rust resolves.
 
@@ -208,17 +209,17 @@ The frontend never receives a raw "move this path to that path" command. It only
 
 | Path | Page | Notes |
 |---|---|---|
-| `/onboarding/:step` | Onboarding | shown when `onboarding_state.complete == false` |
+| `/onboarding`, `/onboarding/:step` | Onboarding ✅ | 6-step setup flow when `onboarding_state.completed == false` |
 | `/` | Overview | dashboard (until it ships, `/` redirects to the first available screen) |
 | `/folders`, `/folders/:id` | Folders ✅ | list + detail (status, overview by category, settings form, recent problems) |
 | `/rules` | Rules ✅ | priority-ordered list, starter preset menu, enable toggle, reorder, duplicate, delete |
 | `/rules/new`, `/rules/:id` | RuleBuilder ✅ | nested condition tree editor, actions list, live validation, template preview, dry-run folder test |
-| `/preview` | Preview | `?folder=`, `?rule=` |
+| `/preview` | Preview ✅ | scope/filter dry-run plan, conflict checks, selective execution w/ ⌘↩ confirmation |
 | `/activity` | Activity ✅ | paginated operation ledger, filters, undo last/selected/row/batch, conflict resolution (`Needs Review`), retry, CSV export, clear history, reveal in Finder |
 | `/duplicates` | Duplicates | |
-| `/scheduler` | Scheduler | |
+| `/scheduler` | Scheduler ✅ | interval/daily/weekly/launch/manual schedules, quiet hours, catch-up policy, run now |
 | `/categories` | Categories | |
-| `/settings/:section` | Settings | general, monitoring, organization, performance, appearance, privacy, backup |
+| `/settings/:section` | Settings | general ✅, appearance ✅, about ✅ (monitoring, organization, performance, privacy, backup pending) |
 | `/license` | License | |
 
 ### Shared components (all styled by theme tokens only)
@@ -227,7 +228,7 @@ The frontend never receives a raw "move this path to that path" command. It only
 
 ### State
 
-- Zustand stores: `useUi` (theme, density, sidebar), `useMonitoring`, `useFolders`, `useRules`, `usePlan`, `useActivity`. Stores call `services/*` which call generated bindings. Event listeners update stores.
+- Zustand stores: `useUi` (theme, density, sidebar), `useMonitoring`, `useFolders`, `useRules`, `usePreview`, `useActivity`, `useSchedules`, `useOnboarding`, `useSettings`. Stores call `services/*` which call generated bindings. Event listeners update stores.
 - No business logic in stores — only caching and UI state.
 - Stores that save optimistically must never roll back to a locally remembered state on failure; they re-read from Rust (BUG-004).
 

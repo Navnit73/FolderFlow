@@ -4,6 +4,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: SemVer.
 
 ## [Unreleased]
 
+### Added — Phase 5 (Preview & automation)
+- Preview screen (`/preview`): non-mutating dry-run plan creation via `engine/planner.rs` (`&dyn ReadOnlyFs` + `PreviewStore`), breakdown by category and rule, folder/rule scope filters, search, conflict badges and blocked-item safeguards, per-item selection, conflict resolution policy selector, and ⌘↩ confirmation execution with pre-execution revalidation (`R-PLAN-01..11`, `R-EXEC-01..05`).
+- Real-time automation pipeline (`src-tauri/src/engine/pipeline.rs`) wired to `MonitorService` via `CompositeObserver` (`src-tauri/src/events.rs`), bounded 4096-event intake queue with dirty-folder reconciliation under burst overload, rule/folder schedule filtering, and `file_records` sync after moves/renames.
+- Scheduler service (`src-tauri/src/engine/scheduler.rs`, `database/repo_schedules.rs`) & Scheduler screen (`/scheduler`): interval, daily, weekly (selected weekdays), on-launch, and manual schedules, DST-aware next-run computation, quiet hours (`HH:MM` overnight and same-day), `Skip`/`RunOnce` catch-up policies, per-scope concurrency lock, enable/disable toggle, and Run Now.
+- Six-step Onboarding wizard (`/onboarding/:step`, `src-tauri/src/onboarding/mod.rs`) & Settings → General (`GeneralSection`): known-folder setup with macOS Privacy guidance, organization preference, starter template selection, non-mutating scan preview, explicit confirmation before enabling starter rules, relaunch resume, and Re-run setup wizard.
+
+### Fixed — Phase 5 audit
+- BUG-022 … BUG-025 (see docs/BUGS.md): unified candidate scanning through `FolderScanSpec::from_folder` with live `MonitoringSettings`, fixed `folder_id` schedule scoping and `Realtime` quiet hours in `AutomationPipeline`, excluded disabled folders from unscoped previews, added ancestor permission walk in planner, prevented double-execution of completed preview items, propagated monitoring updates from `settings_update` to `MonitorService`, and offloaded sync folder scans with `spawn_blocking`.
+
 ### Added — Phase 4 (Safe operations)
 - Activity screen (`/activity`): paginated write-ahead ledger view with search/status/type filters, one-click Undo Last / Undo Selected / per-row Undo / Undo Batch (with empty folder pruning), occupied-path Undo Conflict alert with "Restore with Auto-Rename", pending `Needs Review` conflict resolution queue (`Keep Both` / `Skip`), Retry Failed operation, formula-injection-safe CSV export, Clear History confirmation dialog, and Reveal in Finder (`NSWorkspace`).
 - Safe filesystem layer (`src-tauri/src/engine/safe_fs/`): the sole mutating FS module using `renamex_np(RENAME_EXCL)`, streaming 64 KiB `copy_excl` (`O_CREAT | O_EXCL` + BLAKE3 + `fsync`), `VerifiedSourceToken`-gated `remove_verified_source`, `NSFileManager` Trash integration (`SafeFs::production`) with isolated temp-Trash override (`SafeFs::with_trash_dir`), `statvfs` disk space pre-check, and deterministic fault-injection wrapper (`FaultyFs`).

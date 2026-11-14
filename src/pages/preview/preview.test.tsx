@@ -216,5 +216,10 @@ describe("PreviewPage (UI-PREV-01..04)", () => {
       expect(commands.planExecute).toHaveBeenCalledWith("plan-1", ["i1"], "auto_rename");
     });
     expect(await screen.findByText(/Executed 1 change/i)).toBeInTheDocument();
+
+    // BUG-024c: executed item must be unselected/pruned so Execute Selected cannot double-run.
+    expect(
+      screen.getByRole("button", { name: /Execute selected \(0\)/i }),
+    ).toBeDisabled();
   });
 });

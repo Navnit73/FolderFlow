@@ -10,9 +10,7 @@ use crate::onboarding::{
 
 #[tauri::command]
 #[specta::specta]
-pub async fn onboarding_state(
-    state: State<'_, AppState>,
-) -> Result<OnboardingState, UiError> {
+pub async fn onboarding_state(state: State<'_, AppState>) -> Result<OnboardingState, UiError> {
     Ok(state.onboarding.get_state().await?)
 }
 
@@ -54,9 +52,6 @@ pub async fn onboarding_complete(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn onboarding_reset(
-    state: State<'_, AppState>,
-) -> Result<OnboardingState, UiError> {
+pub async fn onboarding_reset(state: State<'_, AppState>) -> Result<OnboardingState, UiError> {
     Ok(state.onboarding.reset().await?)
 }
-

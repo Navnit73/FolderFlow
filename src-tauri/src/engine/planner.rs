@@ -13,9 +13,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
-use crate::database::repo_operations::{
-    self, OperationView, ReviewProposedAction,
-};
+use crate::database::repo_operations::{self, OperationView, ReviewProposedAction};
 use crate::database::repo_rules;
 use crate::engine::classifier::{Classifier, HEADER_BYTES};
 use crate::engine::conflicts::ConflictPolicy;
@@ -23,10 +21,14 @@ use crate::engine::fs_view::{EntryKind, ReadOnlyFs};
 use crate::engine::operations::{BatchTrigger, OpKind};
 use crate::engine::organizer::{OrganizeOutcome, OrganizeRequest, Organizer};
 use crate::engine::paths::{nfc, PathAuthority};
+use crate::engine::reconcile::FolderScanSpec;
 use crate::engine::safe_fs::EntryIdentity;
+use crate::engine::scanner::{scan, ScanOptions};
 use crate::error::{AppError, AppResult};
+use crate::folders::MonitoredFolder;
 use crate::rules::evaluator::{evaluate_rules, EvalWarning, PlannedOp};
 use crate::rules::models::{FileFacts, Rule};
+use crate::settings::MonitoringSettings;
 use crate::utils::clock::Clock;
 
 pub const PLAN_SCHEMA_VERSION: u32 = 1;
@@ -297,6 +299,49 @@ impl PreviewStore {
         guard.plans.remove(plan_id).is_some()
     }
 
+    /// Removes targeted items that were executed or queued for review so a subsequent
+    /// `plan_execute` call on the same plan cannot double-execute completed work (`BUG-024c`).
+    pub fn prune_executed(
+        &self,
+        plan_id: &str,
+        selected_ids: Option<&[String]>,
+        report: &PlanExecutionReport,
+    ) {
+        let stale_ids: HashSet<&str> = report
+            .skipped_stale
+            .iter()
+            .map(|s| s.item_id.as_str())
+            .collect();
+        let targeted: Option<HashSet<&str>> =
+            selected_ids.map(|ids| ids.iter().map(String::as_str).collect());
+
+        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(plan) = guard.plans.get_mut(plan_id) {
+            let remaining: Vec<PlanItem> = plan
+                .items
+                .iter()
+                .filter(|item| {
+                    if item.status == PlanItemStatus::Blocked {
+                        return true;
+                    }
+                    let was_targeted = targeted
+                        .as_ref()
+                        .is_none_or(|set| set.contains(item.id.as_str()));
+                    if !was_targeted || stale_ids.contains(item.id.as_str()) {
+                        return true;
+                    }
+                    let failed_prefix = format!("{}: ", item.source_path);
+                    report
+                        .failed
+                        .iter()
+                        .any(|msg| msg.starts_with(&failed_prefix))
+                })
+                .cloned()
+                .collect();
+            plan.items = Arc::from(remaining);
+        }
+    }
+
     pub fn query_items(
         &self,
         plan_id: &str,
@@ -411,16 +456,65 @@ fn recompute_item_status(op: PlanOpKind, conflicts: &[PlanConflict]) -> PlanItem
 }
 
 /// Builds an immutable [`ExecutionPlan`] using only `&dyn ReadOnlyFs` (`P5-T01`, `P5-T02`).
-pub fn build_execution_plan(
-    fs: &dyn ReadOnlyFs,
-    authority: &PathAuthority,
+/// Collects [`PlanCandidate`] entries for `folder`, honoring both per-folder filters and
+/// global [`MonitoringSettings`] via [`FolderScanSpec`] (`BUG-022`).
+pub fn collect_folder_candidates(
+    folder: &MonitoredFolder,
+    monitoring: &MonitoringSettings,
     classifier: &Classifier,
-    clock: &dyn Clock,
+    explicit_paths: Option<&HashSet<PathBuf>>,
+) -> Vec<PlanCandidate> {
+    let spec = FolderScanSpec::from_folder(folder, monitoring);
+    let opts = ScanOptions {
+        recursive: spec.recursive,
+        rules: spec.rules,
+    };
+    let mut out = Vec::new();
+    let _ = scan(&spec.path, &opts, classifier, |batch| {
+        for sf in batch {
+            if let Some(allow) = explicit_paths {
+                if !allow.contains(&nfc(&sf.facts.path)) {
+                    continue;
+                }
+            }
+            out.push(PlanCandidate {
+                folder_id: folder.id.clone(),
+                folder_path: spec.path.clone(),
+                folder_name: folder.name.clone(),
+                path: sf.facts.path,
+                category_hint: Some(sf.category),
+                mime_hint: sf.mime,
+                content_hash: None,
+                is_duplicate: false,
+            });
+        }
+        Ok(())
+    });
+    out
+}
+
+/// Borrowed engine services required by [`build_execution_plan`].
+#[derive(Clone, Copy)]
+pub struct PlanContext<'a> {
+    pub fs: &'a dyn ReadOnlyFs,
+    pub authority: &'a PathAuthority,
+    pub classifier: &'a Classifier,
+    pub clock: &'a dyn Clock,
+}
+
+pub fn build_execution_plan(
+    ctx: &PlanContext<'_>,
     rules: &[Rule],
     candidates: &[PlanCandidate],
     scope: &PlanScope,
     env: &PlanEnv,
 ) -> ExecutionPlan {
+    let PlanContext {
+        fs,
+        authority,
+        classifier,
+        clock,
+    } = *ctx;
     let scoped_rules: Vec<Rule> = if let Some(rule_id) = &scope.rule_id {
         rules
             .iter()
@@ -624,13 +718,23 @@ pub fn build_execution_plan(
                             message: "Permission denied writing to destination folder.".into(),
                         });
                     } else if let Some(parent) = dst_path.parent() {
-                        if let Err(e) = fs.stat(parent) {
-                            if e.kind() == ErrorKind::PermissionDenied {
-                                conflicts.push(PlanConflict {
-                                    kind: PlanConflictKind::PermissionDenied,
-                                    message: "Permission denied writing to destination folder."
-                                        .into(),
-                                });
+                        // Walk ancestors until reaching an existing directory so `PermissionDenied`
+                        // on a locked ancestor is caught even when deeper target subdirs do not yet exist.
+                        let mut cur = Some(parent);
+                        while let Some(dir) = cur {
+                            match fs.stat(dir) {
+                                Err(e) if e.kind() == ErrorKind::PermissionDenied => {
+                                    conflicts.push(PlanConflict {
+                                        kind: PlanConflictKind::PermissionDenied,
+                                        message: "Permission denied writing to destination folder."
+                                            .into(),
+                                    });
+                                    break;
+                                }
+                                Err(e) if e.kind() == ErrorKind::NotFound => {
+                                    cur = dir.parent();
+                                }
+                                _ => break,
                             }
                         }
                     }
@@ -765,7 +869,11 @@ pub fn build_execution_plan(
             bytes,
         })
         .collect();
-    by_category.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.category.cmp(&b.category)));
+    by_category.sort_by(|a, b| {
+        b.bytes
+            .cmp(&a.bytes)
+            .then_with(|| a.category.cmp(&b.category))
+    });
 
     let mut by_rule: Vec<PlanRuleCount> = rule_map
         .into_iter()
@@ -775,7 +883,11 @@ pub fn build_execution_plan(
             count,
         })
         .collect();
-    by_rule.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.rule_id.cmp(&b.rule_id)));
+    by_rule.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.rule_id.cmp(&b.rule_id))
+    });
 
     let summary = PlanSummary {
         plan_id: Uuid::now_v7().to_string(),
@@ -879,8 +991,9 @@ pub async fn execute_plan(
                 item_id: item.id.clone(),
                 source_path: item.source_path.clone(),
                 reason: StaleReason::IdentityChanged,
-                message: "Source file was replaced by a different inode since the plan was created."
-                    .into(),
+                message:
+                    "Source file was replaced by a different inode since the plan was created."
+                        .into(),
             });
             continue;
         }
@@ -890,8 +1003,9 @@ pub async fn execute_plan(
                 item_id: item.id.clone(),
                 source_path: item.source_path.clone(),
                 reason: StaleReason::ModifiedSincePlan,
-                message: "Source file size or modification time changed since the plan was created."
-                    .into(),
+                message:
+                    "Source file size or modification time changed since the plan was created."
+                        .into(),
             });
             continue;
         }
@@ -1156,10 +1270,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[
                 candidate("f1", &root, "invoice_2026.pdf"),
@@ -1198,10 +1314,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[candidate("f1", &root, "contract.pdf")],
             &PlanScope::default(),
@@ -1266,10 +1384,12 @@ mod tests {
 
         // 1. Folder scope = folder-1
         let p_folder = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r1.clone(), r2.clone()],
             &cands,
             &PlanScope {
@@ -1284,10 +1404,12 @@ mod tests {
 
         // 2. Rule scope = r2
         let p_rule = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r1.clone(), r2.clone()],
             &cands,
             &PlanScope {
@@ -1302,10 +1424,12 @@ mod tests {
 
         // 3. Explicit file list scope
         let p_files = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r1],
             &cands,
             &PlanScope {
@@ -1369,10 +1493,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r_move_ren, r_copy, r_rev],
             &[
                 candidate("f1", &root, "bill.pdf"),
@@ -1442,10 +1568,12 @@ mod tests {
         env.dev_by_prefix.insert(root.join("vol_b"), 20);
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[
                 candidate("f1", &root, "vol_a/doc.pdf"),
@@ -1484,10 +1612,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[candidate("f1", &root, "in/report.pdf")],
             &PlanScope::default(),
@@ -1520,10 +1650,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[
                 candidate("f1", &root, "sub1/same.txt"),
@@ -1583,10 +1715,12 @@ mod tests {
         env.permission_denied_prefixes.push(locked_dir);
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r_unauth, r_perm],
             &[
                 candidate("f1", &root, "f1.txt"),
@@ -1651,10 +1785,12 @@ mod tests {
         );
 
         let plan_unavail = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r_unavail],
             &[candidate("f1", &root, "big.bin")],
             &PlanScope::default(),
@@ -1680,10 +1816,12 @@ mod tests {
         env.free_bytes_by_prefix.insert(root.clone(), 512); // Only 512 B free!
 
         let plan_space = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r_space],
             &[candidate("f1", &root, "big.bin")],
             &PlanScope::default(),
@@ -1740,10 +1878,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &cands,
             &PlanScope::default(),
@@ -1751,7 +1891,10 @@ mod tests {
         );
 
         let after = snapshot_tree(&root);
-        assert_eq!(before, after, "10k-file dry run must perform zero FS mutations");
+        assert_eq!(
+            before, after,
+            "10k-file dry run must perform zero FS mutations"
+        );
         assert_eq!(plan.summary.files_evaluated, 10_000);
         assert_eq!(plan.summary.files_matched, 10_000);
     }
@@ -1787,10 +1930,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[r1, r2],
             &[candidate("f1", &root, "shared.pdf")],
             &PlanScope::default(),
@@ -1809,7 +1954,13 @@ mod tests {
 
     async fn setup_executor(
         root: &Path,
-    ) -> (Organizer, PathAuthority, Classifier, FixedClock, database::Db) {
+    ) -> (
+        Organizer,
+        PathAuthority,
+        Classifier,
+        FixedClock,
+        database::Db,
+    ) {
         let db = database::open_in_memory().await.expect("db");
         let ledger = Ledger::new(db.clone());
         let fs = Arc::new(SafeFs::with_trash_dir(root.join(".Trash")));
@@ -1839,10 +1990,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[
                 candidate("f1", &root, "one.txt"),
@@ -1893,10 +2046,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[candidate("f1", &root, "swap.txt")],
             &PlanScope::default(),
@@ -1945,10 +2100,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[candidate("f1", &root, "growing.txt")],
             &PlanScope::default(),
@@ -2000,10 +2157,12 @@ mod tests {
         );
 
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[candidate("f1", &root, "gone.txt")],
             &PlanScope::default(),
@@ -2049,10 +2208,12 @@ mod tests {
 
         // At plan time, `Sorted/late_conflict.txt` does NOT exist.
         let plan = build_execution_plan(
-            &RealFs,
-            &auth,
-            &cls,
-            &clock,
+            &PlanContext {
+                fs: &RealFs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
             &[rule],
             &[candidate("f1", &root, "late_conflict.txt")],
             &PlanScope::default(),
@@ -2085,6 +2246,82 @@ mod tests {
         assert_eq!(
             std::fs::read(&dst).expect("dst intact"),
             b"occupied-after-plan"
+        );
+    }
+
+    struct AncestorDeniedFs {
+        denied_root: PathBuf,
+    }
+
+    impl ReadOnlyFs for AncestorDeniedFs {
+        fn stat(&self, path: &Path) -> std::io::Result<crate::engine::fs_view::FileFacts> {
+            if nfc(path) == nfc(&self.denied_root) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "simulated EACCES",
+                ));
+            }
+            if nfc(path).starts_with(nfc(&self.denied_root)) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "nested uncreated subdir",
+                ));
+            }
+            RealFs.stat(path)
+        }
+
+        fn read_header(&self, path: &Path, max: usize) -> std::io::Result<Vec<u8>> {
+            RealFs.read_header(path, max)
+        }
+    }
+
+    #[test]
+    fn bug_024_plan_detects_ancestor_permission_denied() {
+        let (_d, root) = tempdir();
+        write_file(&root.join("doc.txt"), b"hello");
+        let locked_root = root.join("LockedAncestor");
+        mkdir(&locked_root);
+        let deep_dst = locked_root.join("MissingChild").join("2026");
+
+        let auth = make_authority(&[&root]);
+        let cls = make_classifier();
+        let clock = FixedClock::utc(1_700_000_000_000);
+        let rule = make_rule(
+            "r-deep-perm",
+            "Deep Perm",
+            1,
+            leaf_text(TextFieldKind::Name, TextOp::Equals, "doc.txt"),
+            vec![Action::Move {
+                destination: deep_dst.to_string_lossy().into_owned(),
+            }],
+            ExecutionMode::FirstMatch,
+        );
+
+        let mock_fs = AncestorDeniedFs {
+            denied_root: locked_root,
+        };
+        let plan = build_execution_plan(
+            &PlanContext {
+                fs: &mock_fs,
+                authority: &auth,
+                classifier: &cls,
+                clock: &clock,
+            },
+            &[rule],
+            &[candidate("f1", &root, "doc.txt")],
+            &PlanScope::default(),
+            &PlanEnv::default(),
+        );
+
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.items[0].status, PlanItemStatus::Blocked);
+        assert!(
+            plan.items[0]
+                .conflicts
+                .iter()
+                .any(|c| c.kind == PlanConflictKind::PermissionDenied),
+            "BUG-024b: expected PermissionDenied walking ancestor; got {:?}",
+            plan.items[0].conflicts
         );
     }
 }

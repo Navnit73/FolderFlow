@@ -49,4 +49,3 @@ pub async fn schedules_run_now(
     state.refresh_authority().await?;
     Ok(state.scheduler.run_now(&id).await?)
 }
-

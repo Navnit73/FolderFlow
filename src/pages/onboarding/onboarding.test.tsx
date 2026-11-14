@@ -137,7 +137,7 @@ describe("OnboardingPage (UI-ONB-01..04)", () => {
     });
   });
 
-  it("UI-ONB-03: resumes at saved onboarding step and lets Settings re-run onboarding", async () => {
+  it("UI-ONB-03: resumes at saved onboarding step on relaunch", async () => {
     window.location.hash = "";
     commands.onboardingState.mockResolvedValue(
       ok(onboardingStateFixture({ currentStep: 3, completed: false, automationConfirmed: false })),
@@ -148,10 +148,9 @@ describe("OnboardingPage (UI-ONB-01..04)", () => {
     expect(
       await screen.findByRole("heading", { name: /How should FolderFlow organize/i }),
     ).toBeInTheDocument();
+  });
 
-    // Now test re-running from Settings -> General
-    resetBindingMocks();
-    useOnboarding.getState().resetStore();
+  it("UI-ONB-03b: Settings General lets the user re-run the setup wizard", async () => {
     render(
       <MemoryRouter initialEntries={["/settings/general"]}>
         <Routes>

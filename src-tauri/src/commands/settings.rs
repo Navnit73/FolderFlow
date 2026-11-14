@@ -17,5 +17,15 @@ pub async fn settings_update(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<Settings, UiError> {
-    Ok(state.settings.update(settings).await?)
+    let prev = state.settings.get().await?;
+    let updated = state.settings.update(settings).await?;
+    if updated.monitoring != prev.monitoring {
+        state.monitor.set_settings(updated.monitoring.clone());
+        for folder in state.folders.list().await? {
+            if folder.enabled {
+                state.monitor.start(folder).await;
+            }
+        }
+    }
+    Ok(updated)
 }

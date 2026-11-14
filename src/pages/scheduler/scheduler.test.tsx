@@ -85,7 +85,9 @@ describe("SchedulerPage (UI-SCHED-01..02)", () => {
     expect(await screen.findByText("No schedules configured")).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.click(screen.getAllByRole("button", { name: /New schedule/i })[0]);
+    const newScheduleBtn = screen.getAllByRole("button", { name: /New schedule/i })[0];
+    if (!newScheduleBtn) throw new Error("Expected New schedule button");
+    await user.click(newScheduleBtn);
 
     await user.selectOptions(screen.getByLabelText("Target folder"), "f1");
     await user.selectOptions(screen.getByLabelText("Schedule type"), "interval");
@@ -125,6 +127,39 @@ describe("SchedulerPage (UI-SCHED-01..02)", () => {
           catchUp: "skip",
         },
       });
+    });
+
+    // Also verify editing an existing schedule submits its id cleanly.
+    const created = scheduleFixture({
+      id: "sched-edit-1",
+      folderId: "f1",
+      ruleId: null,
+      scheduleType: "daily",
+      enabled: true,
+      config: {
+        intervalSecs: null,
+        time: "09:15",
+        weekdays: [],
+        quietHours: null,
+        catchUp: "skip",
+      },
+    });
+    commands.schedulesList.mockResolvedValue(ok([created]));
+    useSchedules.getState().reset();
+    await useSchedules.getState().load();
+
+    await user.click(await screen.findByRole("button", { name: /Edit schedule for Downloads/i }));
+    await user.clear(screen.getByLabelText("Run time"));
+    await user.type(screen.getByLabelText("Run time"), "10:45");
+    await user.click(screen.getByRole("button", { name: "Save schedule" }));
+
+    await waitFor(() => {
+      expect(commands.schedulesUpsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          id: "sched-edit-1",
+          config: expect.objectContaining({ time: "10:45" }),
+        }),
+      );
     });
   });
 });

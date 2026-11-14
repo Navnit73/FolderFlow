@@ -21,15 +21,17 @@ use crate::database::{repo_files, repo_folders, repo_rules, Db};
 use crate::engine::classifier::{Classifier, HEADER_BYTES};
 use crate::engine::conflicts::ConflictPolicy;
 use crate::engine::fs_view::{EntryKind, ReadOnlyFs, RealFs};
-use crate::engine::ignore::IgnoreRules;
 use crate::engine::operations::{BatchTrigger, OpKind};
 use crate::engine::organizer::Organizer;
 use crate::engine::paths::{nfc, PathAuthority};
 use crate::engine::planner::{
-    build_execution_plan, execute_plan, PlanCandidate, PlanEnv, PlanExecutionReport, PlanScope,
+    build_execution_plan, collect_folder_candidates, execute_plan, PlanCandidate, PlanContext,
+    PlanEnv, PlanExecutionReport, PlanScope,
 };
-use crate::engine::scanner::{scan, ScanOptions, ScannedFile};
+use crate::engine::scanner::ScannedFile;
 use crate::error::{AppError, AppResult};
+use crate::folders::MonitoredFolder;
+use crate::settings::{MonitoringSettings, SettingsService};
 use crate::utils::clock::Clock;
 
 /// Grace window beyond `next_run_at` before a delayed run is treated as missed (5 minutes).
@@ -41,9 +43,16 @@ pub const MIN_INTERVAL_SECS: u32 = 60;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DueDecision {
     NotDue,
-    DeferredQuietHours { resume_at_ms: i64 },
-    MissedSkipped { next_run_at: Option<i64> },
-    RunNow { is_catch_up: bool, next_run_at: Option<i64> },
+    DeferredQuietHours {
+        resume_at_ms: i64,
+    },
+    MissedSkipped {
+        next_run_at: Option<i64>,
+    },
+    RunNow {
+        is_catch_up: bool,
+        next_run_at: Option<i64>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -68,7 +77,10 @@ pub struct ScheduleRunOutcome {
 /// Parses `"HH:MM"` (or `"H:MM"`) into a `NaiveTime`.
 pub fn parse_hhmm(raw: &str) -> AppResult<NaiveTime> {
     NaiveTime::parse_from_str(raw.trim(), "%H:%M").map_err(|_| {
-        AppError::validation("time", format!("Invalid time \"{raw}\"; expected HH:MM (24-hour)."))
+        AppError::validation(
+            "time",
+            format!("Invalid time \"{raw}\"; expected HH:MM (24-hour)."),
+        )
     })
 }
 
@@ -103,13 +115,19 @@ pub fn validate_schedule_input(input: &ScheduleInput) -> AppResult<()> {
         }
         ScheduleType::Daily => {
             let raw = input.config.time.as_deref().ok_or_else(|| {
-                AppError::validation("time", "Time of day (HH:MM) is required for daily schedules.")
+                AppError::validation(
+                    "time",
+                    "Time of day (HH:MM) is required for daily schedules.",
+                )
             })?;
             let _ = parse_hhmm(raw)?;
         }
         ScheduleType::Weekly => {
             let raw = input.config.time.as_deref().ok_or_else(|| {
-                AppError::validation("time", "Time of day (HH:MM) is required for weekly schedules.")
+                AppError::validation(
+                    "time",
+                    "Time of day (HH:MM) is required for weekly schedules.",
+                )
             })?;
             let _ = parse_hhmm(raw)?;
             if input.config.weekdays.is_empty() {
@@ -280,7 +298,9 @@ pub fn compute_next_run_at(
                 if let Some(qh) = &config.quiet_hours {
                     if is_in_quiet_hours(cand, qh, clock) {
                         let shifted = quiet_hours_end_after(cand, qh, clock);
-                        if shifted <= after_ms || !allowed.contains(&clock.local_date(shifted).weekday()) {
+                        if shifted <= after_ms
+                            || !allowed.contains(&clock.local_date(shifted).weekday())
+                        {
                             continue;
                         }
                         cand = shifted;
@@ -391,10 +411,7 @@ impl SchedulerService {
     }
 
     pub fn scope_lock(&self, key: &ScopeKey) -> Arc<Mutex<()>> {
-        let mut guard = self
-            .scope_locks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.scope_locks.lock().unwrap_or_else(|e| e.into_inner());
         guard
             .entry(key.clone())
             .or_insert_with(|| Arc::new(Mutex::new(())))
@@ -430,7 +447,12 @@ impl SchedulerService {
 
         let now_ms = self.clock.now_ms();
         let next_run_at = if input.enabled {
-            compute_next_run_at(input.schedule_type, &input.config, now_ms, self.clock.as_ref())?
+            compute_next_run_at(
+                input.schedule_type,
+                &input.config,
+                now_ms,
+                self.clock.as_ref(),
+            )?
         } else {
             None
         };
@@ -483,7 +505,12 @@ impl SchedulerService {
             .ok_or_else(|| AppError::NotFound("Schedule".into()))?;
         let now_ms = self.clock.now_ms();
         let next_run_at = if sched.enabled {
-            compute_next_run_at(sched.schedule_type, &sched.config, now_ms, self.clock.as_ref())?
+            compute_next_run_at(
+                sched.schedule_type,
+                &sched.config,
+                now_ms,
+                self.clock.as_ref(),
+            )?
         } else {
             sched.next_run_at
         };
@@ -599,7 +626,8 @@ impl SchedulerService {
 
         if target_rules.is_empty() {
             let now_ms = self.clock.now_ms();
-            let _ = repo_schedules::record_run(&self.db, &sched.id, Some(now_ms), next_run_at).await?;
+            let _ =
+                repo_schedules::record_run(&self.db, &sched.id, Some(now_ms), next_run_at).await?;
             return Ok(ScheduleRunOutcome {
                 schedule_id: sched.id.clone(),
                 status: ScheduleRunStatus::NoMatchingFiles,
@@ -629,18 +657,22 @@ impl SchedulerService {
                 .collect()
         };
 
-        let mut candidates = Vec::new();
-        for folder in &target_folders {
-            let f_path = PathBuf::from(&folder.path);
-            let mut cands = scan_candidates_for_folder(
-                &folder.id,
-                &f_path,
-                &folder.name,
-                folder.recursive,
-                &self.classifier,
-            );
-            candidates.append(&mut cands);
-        }
+        let monitoring = SettingsService::new(self.db.clone())
+            .get()
+            .await?
+            .monitoring;
+        let classifier = self.classifier.clone();
+        let scan_folders = target_folders.clone();
+        let candidates = tokio::task::spawn_blocking(move || {
+            let mut candidates = Vec::new();
+            for folder in &scan_folders {
+                let mut cands = scan_candidates_for_folder(folder, &monitoring, &classifier);
+                candidates.append(&mut cands);
+            }
+            candidates
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("scheduler scan task failed: {e}")))?;
 
         let authority = self
             .authority
@@ -649,10 +681,12 @@ impl SchedulerService {
             .clone();
 
         let plan = build_execution_plan(
-            &RealFs,
-            &authority,
-            &self.classifier,
-            self.clock.as_ref(),
+            &PlanContext {
+                fs: &RealFs,
+                authority: &authority,
+                classifier: &self.classifier,
+                clock: self.clock.as_ref(),
+            },
             &target_rules,
             &candidates,
             &PlanScope {
@@ -665,7 +699,8 @@ impl SchedulerService {
 
         let now_ms = self.clock.now_ms();
         if plan.items.is_empty() {
-            let _ = repo_schedules::record_run(&self.db, &sched.id, Some(now_ms), next_run_at).await?;
+            let _ =
+                repo_schedules::record_run(&self.db, &sched.id, Some(now_ms), next_run_at).await?;
             return Ok(ScheduleRunOutcome {
                 schedule_id: sched.id.clone(),
                 status: ScheduleRunStatus::NoMatchingFiles,
@@ -722,8 +757,8 @@ impl SchedulerService {
         }
 
         let finished_ms = self.clock.now_ms();
-        let _ = repo_schedules::record_run(&self.db, &sched.id, Some(finished_ms), next_run_at)
-            .await?;
+        let _ =
+            repo_schedules::record_run(&self.db, &sched.id, Some(finished_ms), next_run_at).await?;
 
         Ok(ScheduleRunOutcome {
             schedule_id: sched.id.clone(),
@@ -733,41 +768,13 @@ impl SchedulerService {
     }
 }
 
-/// Collects `PlanCandidate` entries for a scheduled run without mutating the filesystem.
+/// Collects `PlanCandidate` entries for a scheduled run without mutating the filesystem (`BUG-022`).
 pub(crate) fn scan_candidates_for_folder(
-    folder_id: &str,
-    folder_path: &PathBuf,
-    folder_name: &str,
-    recursive: bool,
+    folder: &MonitoredFolder,
+    monitoring: &MonitoringSettings,
     classifier: &Classifier,
 ) -> Vec<PlanCandidate> {
-    let opts = ScanOptions {
-        recursive,
-        rules: IgnoreRules {
-            ignore_hidden: true,
-            ignore_temporary: true,
-            include_extensions: Vec::new(),
-            exclude_extensions: Vec::new(),
-            excluded_dirs: Vec::new(),
-        },
-    };
-    let mut out = Vec::new();
-    let _ = scan(folder_path, &opts, classifier, |batch| {
-        for sf in batch {
-            out.push(PlanCandidate {
-                folder_id: folder_id.to_owned(),
-                folder_path: folder_path.clone(),
-                folder_name: folder_name.to_owned(),
-                path: sf.facts.path,
-                category_hint: Some(sf.category),
-                mime_hint: sf.mime,
-                content_hash: None,
-                is_duplicate: false,
-            });
-        }
-        Ok(())
-    });
-    out
+    collect_folder_candidates(folder, monitoring, classifier, None)
 }
 
 #[cfg(test)]
@@ -785,7 +792,9 @@ mod tests {
     use crate::engine::paths::ApprovedRoot;
     use crate::engine::paths::RootKind;
     use crate::engine::safe_fs::SafeFs;
-    use crate::rules::models::{Action, ConditionNode, DateSource, ExecutionMode, Rule, RuleOrigin};
+    use crate::rules::models::{
+        Action, ConditionNode, DateSource, ExecutionMode, Rule, RuleOrigin,
+    };
     use crate::test_support::{tempdir, write_file};
     use crate::utils::clock::FixedClock;
 
@@ -802,15 +811,9 @@ mod tests {
     ) -> (SchedulerService, Db, String, Rule) {
         let db = database::open_in_memory().await.expect("db");
         let folder_id = "folder-sched".to_owned();
-        repo_folders::insert(
-            &db,
-            &folder_id,
-            "Downloads",
-            &root.to_string_lossy(),
-            true,
-        )
-        .await
-        .expect("insert folder");
+        repo_folders::insert(&db, &folder_id, "Downloads", &root.to_string_lossy(), true)
+            .await
+            .expect("insert folder");
 
         let rule = Rule {
             id: "rule-sched".into(),
@@ -911,7 +914,9 @@ mod tests {
             .await
             .expect("folder sched");
         assert_eq!(svc.list().await.expect("list").len(), 1);
-        repo_folders::delete(&db, &folder_id).await.expect("del folder");
+        repo_folders::delete(&db, &folder_id)
+            .await
+            .expect("del folder");
         assert!(repo_schedules::get(&db, &f_sched.id)
             .await
             .expect("get")
@@ -966,7 +971,11 @@ mod tests {
         assert_eq!(next_daily_tomorrow, utc_ms(2026, 6, 16, 9, 0));
 
         // OnLaunch / Manual / Realtime have no wall-clock `next_run_at`.
-        for mode in [ScheduleType::OnLaunch, ScheduleType::Manual, ScheduleType::Realtime] {
+        for mode in [
+            ScheduleType::OnLaunch,
+            ScheduleType::Manual,
+            ScheduleType::Realtime,
+        ] {
             assert_eq!(
                 compute_next_run_at(mode, &ScheduleConfig::default(), now, &clock).expect("mode"),
                 None
@@ -986,13 +995,20 @@ mod tests {
             time: Some("09:00".into()),
             ..Default::default()
         };
-        let next_spring = compute_next_run_at(ScheduleType::Daily, &cfg_0900, spring_now, &spring_clock)
-            .expect("spring")
-            .expect("some");
+        let next_spring =
+            compute_next_run_at(ScheduleType::Daily, &cfg_0900, spring_now, &spring_clock)
+                .expect("spring")
+                .expect("some");
         assert_eq!(next_spring - spring_now, 23 * 3_600_000);
         let local_dt = spring_clock.to_local(next_spring);
-        assert_eq!(local_dt.date_naive(), NaiveDate::from_ymd_opt(2026, 3, 8).unwrap());
-        assert_eq!(local_dt.time(), NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+        assert_eq!(
+            local_dt.date_naive(),
+            NaiveDate::from_ymd_opt(2026, 3, 8).expect("valid date")
+        );
+        assert_eq!(
+            local_dt.time(),
+            NaiveTime::from_hms_opt(9, 0, 0).expect("valid time")
+        );
 
         // Spring gap: daily at 02:30 (skipped hour!) lands cleanly at 03:00 local (07:00 UTC).
         let cfg_0230 = ScheduleConfig {
@@ -1000,9 +1016,10 @@ mod tests {
             ..Default::default()
         };
         let before_gap = utc_ms(2026, 3, 8, 6, 0); // 01:00 EST
-        let next_gap = compute_next_run_at(ScheduleType::Daily, &cfg_0230, before_gap, &spring_clock)
-            .expect("spring gap")
-            .expect("some");
+        let next_gap =
+            compute_next_run_at(ScheduleType::Daily, &cfg_0230, before_gap, &spring_clock)
+                .expect("spring gap")
+                .expect("some");
         assert_eq!(next_gap, spring_trans);
 
         // 2. Fall back: 2026-11-01 02:00 EDT (-4h) -> 01:00 EST (-5h), transition at 06:00 UTC.
@@ -1016,7 +1033,10 @@ mod tests {
         // Oct 31 09:00 EDT -> Nov 1 09:00 EST is 25 hours!
         assert_eq!(next_fall - fall_now, 25 * 3_600_000);
         let local_fall = fall_clock.to_local(next_fall);
-        assert_eq!(local_fall.time(), NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+        assert_eq!(
+            local_fall.time(),
+            NaiveTime::from_hms_opt(9, 0, 0).expect("valid time")
+        );
 
         // Repeated hour 01:30 must fire once on Nov 1 (first occurrence at 05:30 UTC), then advance to Nov 2!
         let cfg_0130 = ScheduleConfig {
@@ -1030,7 +1050,7 @@ mod tests {
                 .expect("some");
         assert_eq!(
             fall_clock.to_local(next_after_first).date_naive(),
-            NaiveDate::from_ymd_opt(2026, 11, 2).unwrap()
+            NaiveDate::from_ymd_opt(2026, 11, 2).expect("valid date")
         );
     }
 
@@ -1056,9 +1076,21 @@ mod tests {
         .expect("overnight")
         .expect("some");
         assert_eq!(next, utc_ms(2026, 6, 16, 7, 0));
-        assert!(is_in_quiet_hours(utc_ms(2026, 6, 15, 23, 30), &overnight, &clock));
-        assert!(is_in_quiet_hours(utc_ms(2026, 6, 16, 6, 30), &overnight, &clock));
-        assert!(!is_in_quiet_hours(utc_ms(2026, 6, 16, 7, 0), &overnight, &clock));
+        assert!(is_in_quiet_hours(
+            utc_ms(2026, 6, 15, 23, 30),
+            &overnight,
+            &clock
+        ));
+        assert!(is_in_quiet_hours(
+            utc_ms(2026, 6, 16, 6, 30),
+            &overnight,
+            &clock
+        ));
+        assert!(!is_in_quiet_hours(
+            utc_ms(2026, 6, 16, 7, 0),
+            &overnight,
+            &clock
+        ));
 
         // 2. Same-day quiet hours 12:00..14:00 defer a 13:00 slot -> 14:00 same day.
         let daytime = QuietHours {
@@ -1078,8 +1110,16 @@ mod tests {
         .expect("daytime")
         .expect("some");
         assert_eq!(next_day, utc_ms(2026, 6, 15, 14, 0));
-        assert!(is_in_quiet_hours(utc_ms(2026, 6, 15, 12, 30), &daytime, &clock));
-        assert!(!is_in_quiet_hours(utc_ms(2026, 6, 15, 14, 0), &daytime, &clock));
+        assert!(is_in_quiet_hours(
+            utc_ms(2026, 6, 15, 12, 30),
+            &daytime,
+            &clock
+        ));
+        assert!(!is_in_quiet_hours(
+            utc_ms(2026, 6, 15, 14, 0),
+            &daytime,
+            &clock
+        ));
     }
 
     #[test]
@@ -1099,10 +1139,7 @@ mod tests {
             .expect("some");
         // Next allowed after Mon Jun 15 10:00 is Wed Jun 17 09:00!
         assert_eq!(next, utc_ms(2026, 6, 17, 9, 0));
-        assert_eq!(
-            clock.to_local(next).weekday(),
-            chrono::Weekday::Wed
-        );
+        assert_eq!(clock.to_local(next).weekday(), chrono::Weekday::Wed);
 
         // From Fri Jun 19 09:00 -> jumps over weekend to Wed Jun 24 09:00.
         let fri = utc_ms(2026, 6, 19, 9, 0);
@@ -1136,7 +1173,7 @@ mod tests {
         let dec_skip = evaluate_due_schedule(&s_skip, wake_now, &clock).expect("skip");
         match dec_skip {
             DueDecision::MissedSkipped { next_run_at } => {
-                assert!(next_run_at.unwrap() > wake_now);
+                assert!(next_run_at.expect("next_run_at") > wake_now);
             }
             other => panic!("expected MissedSkipped, got {other:?}"),
         }
@@ -1254,5 +1291,74 @@ mod tests {
             h.await.expect("join");
         }
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn bug_022_scheduled_run_honors_folder_exclusions_and_monitoring_settings() {
+        let (_d, root) = tempdir();
+        let clock = Arc::new(FixedClock::utc(utc_ms(2026, 6, 15, 10, 0)));
+        let (svc, db, folder_id, rule) = setup_scheduler_env(&root, clock).await;
+
+        let excluded_dir = root.join("SkipDir");
+        std::fs::create_dir_all(&excluded_dir).expect("mkdir SkipDir");
+
+        // Configure per-folder extension/subfolder exclusions.
+        let mut folder = repo_folders::get(&db, &folder_id)
+            .await
+            .expect("get folder")
+            .expect("exists");
+        folder.settings.exclude_extensions = vec!["log".into()];
+        folder.settings.excluded_subfolders = vec![excluded_dir.to_string_lossy().into_owned()];
+        repo_folders::update(&db, &folder)
+            .await
+            .expect("update folder settings");
+
+        // Disable `ignore_hidden_files` globally so dotfiles are processed when configured.
+        let settings_svc = crate::settings::SettingsService::new(db.clone());
+        let mut settings = settings_svc.get().await.expect("get settings");
+        settings.monitoring.ignore_hidden_files = false;
+        settings_svc
+            .update(settings)
+            .await
+            .expect("update settings");
+
+        let keep_visible = root.join("keep.txt");
+        let skip_ext = root.join("debug.log");
+        let skip_sub = excluded_dir.join("inside_skip.txt");
+        let include_dotfile = root.join(".hidden_note.txt");
+        write_file(&keep_visible, b"keep");
+        write_file(&skip_ext, b"log");
+        write_file(&skip_sub, b"sub");
+        write_file(&include_dotfile, b"dot");
+
+        let sched = svc
+            .upsert(ScheduleInput {
+                id: None,
+                rule_id: Some(rule.id),
+                folder_id: Some(folder_id),
+                schedule_type: ScheduleType::Manual,
+                config: ScheduleConfig::default(),
+                enabled: true,
+            })
+            .await
+            .expect("upsert");
+
+        let outcome = svc.run_now(&sched.id).await.expect("run_now");
+        assert_eq!(outcome.status, ScheduleRunStatus::Executed);
+
+        assert!(!keep_visible.exists(), "normal file must be organized");
+        assert!(root.join("Organized/keep.txt").exists());
+        assert!(
+            skip_ext.exists(),
+            "BUG-022: excluded extension `.log` must stay untouched"
+        );
+        assert!(
+            skip_sub.exists(),
+            "BUG-022: excluded subfolder file must stay untouched"
+        );
+        assert!(
+            !include_dotfile.exists() && root.join("Organized/.hidden_note.txt").exists(),
+            "BUG-022: disabling global ignore_hidden_files must include hidden files"
+        );
     }
 }

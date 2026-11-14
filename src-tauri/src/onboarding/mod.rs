@@ -5,7 +5,6 @@
 //! so onboarding can be resumed midway or re-run from Settings (`FR-009`).
 
 use std::collections::{BTreeMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -16,17 +15,18 @@ use crate::database::{repo_folders, repo_rules, repo_settings, Db};
 use crate::engine::activity::load_path_authority;
 use crate::engine::classifier::Classifier;
 use crate::engine::fs_view::RealFs;
-use crate::engine::ignore::IgnoreRules;
 use crate::engine::paths::RootPolicy;
 use crate::engine::planner::{
-    build_execution_plan, PlanCandidate, PlanCategoryCount, PlanEnv, PlanItem, PlanScope,
-    PlanSummary, PreviewStore,
+    build_execution_plan, PlanCandidate, PlanCategoryCount, PlanContext, PlanEnv, PlanItem,
+    PlanScope, PlanSummary, PreviewStore,
 };
+use crate::engine::reconcile::FolderScanSpec;
 use crate::engine::scanner::{scan, ScanOptions};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::rules::models::{Rule, RuleOrigin};
 use crate::rules::presets::starter_templates;
 use crate::rules::RuleService;
+use crate::settings::SettingsService;
 use crate::utils::clock::Clock;
 
 pub const ONBOARDING_SETTINGS_KEY: &str = "onboarding";
@@ -62,11 +62,7 @@ impl Default for OnboardingState {
             current_step: 1,
             completed: false,
             organization_preference: OrganizationPreference::ByCategory,
-            selected_preset_ids: vec![
-                "pdfs".into(),
-                "screenshots".into(),
-                "invoices".into(),
-            ],
+            selected_preset_ids: vec!["pdfs".into(), "screenshots".into(), "invoices".into()],
             automation_confirmed: false,
             completed_at: None,
         }
@@ -169,57 +165,66 @@ impl OnboardingService {
             .collect();
 
         let categories = CategoryService::new(self.db.clone()).list().await?;
-        let classifier = Classifier::new(categories);
+        let classifier = std::sync::Arc::new(Classifier::new(categories));
         let folders = repo_folders::list(&self.db).await?;
+        let monitoring = SettingsService::new(self.db.clone())
+            .get()
+            .await?
+            .monitoring;
 
-        let mut folders_scanned: u32 = 0;
-        let mut total_files: u32 = 0;
-        let mut total_folders: u32 = 0;
-        let mut total_bytes: u64 = 0;
-        let mut cat_totals: BTreeMap<String, (u32, u64)> = BTreeMap::new();
-        let mut candidates: Vec<PlanCandidate> = Vec::new();
+        let cls_scan = classifier.clone();
+        let (folders_scanned, total_files, total_folders, total_bytes, cat_totals, candidates) =
+            tokio::task::spawn_blocking(move || {
+                let mut folders_scanned: u32 = 0;
+                let mut total_files: u32 = 0;
+                let mut total_folders: u32 = 0;
+                let mut total_bytes: u64 = 0;
+                let mut cat_totals: BTreeMap<String, (u32, u64)> = BTreeMap::new();
+                let mut candidates: Vec<PlanCandidate> = Vec::new();
 
-        for folder in &folders {
-            let root = PathBuf::from(&folder.path);
-            let opts = ScanOptions {
-                recursive: folder.recursive,
-                rules: IgnoreRules {
-                    ignore_hidden: true,
-                    ignore_temporary: true,
-                    include_extensions: folder.settings.include_extensions.clone(),
-                    exclude_extensions: folder.settings.exclude_extensions.clone(),
-                    excluded_dirs: folder
-                        .settings
-                        .excluded_subfolders
-                        .iter()
-                        .map(PathBuf::from)
-                        .collect(),
-                },
-            };
-            if let Ok(summary) = scan(&root, &opts, &classifier, |batch| {
-                for sf in batch {
-                    let e = cat_totals.entry(sf.category.clone()).or_insert((0, 0));
-                    e.0 = e.0.saturating_add(1);
-                    e.1 = e.1.saturating_add(sf.facts.size);
-                    candidates.push(PlanCandidate {
-                        folder_id: folder.id.clone(),
-                        folder_path: root.clone(),
-                        folder_name: folder.name.clone(),
-                        path: sf.facts.path,
-                        category_hint: Some(sf.category),
-                        mime_hint: sf.mime,
-                        content_hash: None,
-                        is_duplicate: false,
-                    });
+                for folder in &folders {
+                    let spec = FolderScanSpec::from_folder(folder, &monitoring);
+                    let opts = ScanOptions {
+                        recursive: spec.recursive,
+                        rules: spec.rules,
+                    };
+                    if let Ok(summary) = scan(&spec.path, &opts, &cls_scan, |batch| {
+                        for sf in batch {
+                            let e = cat_totals.entry(sf.category.clone()).or_insert((0, 0));
+                            e.0 = e.0.saturating_add(1);
+                            e.1 = e.1.saturating_add(sf.facts.size);
+                            candidates.push(PlanCandidate {
+                                folder_id: folder.id.clone(),
+                                folder_path: spec.path.clone(),
+                                folder_name: folder.name.clone(),
+                                path: sf.facts.path,
+                                category_hint: Some(sf.category),
+                                mime_hint: sf.mime,
+                                content_hash: None,
+                                is_duplicate: false,
+                            });
+                        }
+                        Ok(())
+                    }) {
+                        folders_scanned = folders_scanned.saturating_add(1);
+                        total_files = total_files
+                            .saturating_add(u32::try_from(summary.files).unwrap_or(u32::MAX));
+                        total_folders = total_folders
+                            .saturating_add(u32::try_from(summary.folders).unwrap_or(u32::MAX));
+                        total_bytes = total_bytes.saturating_add(summary.bytes);
+                    }
                 }
-                Ok(())
-            }) {
-                folders_scanned = folders_scanned.saturating_add(1);
-                total_files = total_files.saturating_add(u32::try_from(summary.files).unwrap_or(u32::MAX));
-                total_folders = total_folders.saturating_add(u32::try_from(summary.folders).unwrap_or(u32::MAX));
-                total_bytes = total_bytes.saturating_add(summary.bytes);
-            }
-        }
+                (
+                    folders_scanned,
+                    total_files,
+                    total_folders,
+                    total_bytes,
+                    cat_totals,
+                    candidates,
+                )
+            })
+            .await
+            .map_err(|e| AppError::Internal(format!("onboarding scan failed: {e}")))?;
 
         let mut by_category: Vec<PlanCategoryCount> = cat_totals
             .into_iter()
@@ -229,7 +234,11 @@ impl OnboardingService {
                 bytes,
             })
             .collect();
-        by_category.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.category.cmp(&b.category)));
+        by_category.sort_by(|a, b| {
+            b.bytes
+                .cmp(&a.bytes)
+                .then_with(|| a.category.cmp(&b.category))
+        });
 
         let now_ms = self.clock.now_ms();
         let preview_rules: Vec<Rule> = starter_templates()
@@ -259,10 +268,12 @@ impl OnboardingService {
 
         let authority = load_path_authority(&self.db).await?;
         let plan = build_execution_plan(
-            &RealFs,
-            &authority,
-            &classifier,
-            self.clock.as_ref(),
+            &PlanContext {
+                fs: &RealFs,
+                authority: &authority,
+                classifier: &classifier,
+                clock: self.clock.as_ref(),
+            },
             &preview_rules,
             &candidates,
             &PlanScope::default(),
@@ -428,7 +439,10 @@ mod tests {
         assert!(!comp_disabled.automation_enabled);
         let rules = repo_rules::list(&db).await.expect("rules");
         assert_eq!(rules.len(), 1);
-        assert!(!rules[0].enabled, "unconfirmed onboarding must leave rules disabled");
+        assert!(
+            !rules[0].enabled,
+            "unconfirmed onboarding must leave rules disabled"
+        );
 
         // Re-run onboarding (`FR-009`) and complete WITH explicit confirmation (`FR-008`).
         let reset = onb.reset().await.expect("reset");

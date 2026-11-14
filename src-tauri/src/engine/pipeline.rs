@@ -14,21 +14,23 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::{mpsc, Mutex, Notify};
 
 use crate::database::repo_operations::OperationView;
-use crate::database::repo_schedules::ScheduleType;
+use crate::database::repo_schedules::{Schedule, ScheduleType};
 use crate::database::{repo_files, repo_folders, repo_rules, repo_schedules, Db};
 use crate::engine::classifier::{Classifier, HEADER_BYTES};
 use crate::engine::conflicts::ConflictPolicy;
 use crate::engine::fs_view::{EntryKind, ReadOnlyFs, RealFs};
-use crate::engine::ignore::IgnoreRules;
 use crate::engine::monitor::{FolderRuntime, MonitorObserver};
 use crate::engine::operations::{BatchTrigger, OpKind};
 use crate::engine::organizer::Organizer;
 use crate::engine::paths::{nfc, PathAuthority};
 use crate::engine::planner::{
-    build_execution_plan, execute_plan, PlanCandidate, PlanEnv, PlanScope,
+    build_execution_plan, execute_plan, PlanCandidate, PlanContext, PlanEnv, PlanScope,
 };
+use crate::engine::reconcile::FolderScanSpec;
 use crate::engine::scanner::{scan, ScanOptions, ScannedFile};
-use crate::error::AppResult;
+use crate::engine::scheduler::is_in_quiet_hours;
+use crate::error::{AppError, AppResult};
+use crate::settings::SettingsService;
 
 pub const DEFAULT_PIPELINE_QUEUE_CAPACITY: usize = 4096;
 
@@ -115,10 +117,7 @@ impl AutomationPipeline {
     }
 
     pub fn is_folder_dirty(&self, folder_id: &str) -> bool {
-        let guard = self
-            .dirty_folders
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let guard = self.dirty_folders.lock().unwrap_or_else(|e| e.into_inner());
         guard.contains(folder_id)
     }
 
@@ -134,10 +133,7 @@ impl AutomationPipeline {
             Ok(()) => EnqueueResult::Queued,
             Err(_) => {
                 self.dropped_overflow.fetch_add(1, Ordering::SeqCst);
-                let mut guard = self
-                    .dirty_folders
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
+                let mut guard = self.dirty_folders.lock().unwrap_or_else(|e| e.into_inner());
                 guard.insert(folder_id.to_owned());
                 EnqueueResult::OverflowMarkedDirty
             }
@@ -165,15 +161,23 @@ impl AutomationPipeline {
         }
 
         let schedules = repo_schedules::list(&self.db).await?;
+        let now_ms = self.organizer.clock().now_ms();
+        let clock = self.organizer.clock();
+        let is_active_realtime = |s: &&Schedule| {
+            s.enabled
+                && s.schedule_type == ScheduleType::Realtime
+                && !s
+                    .config
+                    .quiet_hours
+                    .as_ref()
+                    .is_some_and(|qh| is_in_quiet_hours(now_ms, qh, clock.as_ref()))
+        };
+
         let folder_scheds: Vec<_> = schedules
             .iter()
             .filter(|s| s.folder_id.as_deref() == Some(folder_id) && s.rule_id.is_none())
             .collect();
-        if !folder_scheds.is_empty()
-            && !folder_scheds
-                .iter()
-                .any(|s| s.enabled && s.schedule_type == ScheduleType::Realtime)
-        {
+        if !folder_scheds.is_empty() && !folder_scheds.iter().any(is_active_realtime) {
             return Ok(PipelineStepOutcome::NoMatch);
         }
 
@@ -186,12 +190,12 @@ impl AutomationPipeline {
                 }
                 let rule_scheds: Vec<_> = schedules
                     .iter()
-                    .filter(|s| s.rule_id.as_deref() == Some(r.id.as_str()))
+                    .filter(|s| {
+                        s.rule_id.as_deref() == Some(r.id.as_str())
+                            && (s.folder_id.is_none() || s.folder_id.as_deref() == Some(folder_id))
+                    })
                     .collect();
-                rule_scheds.is_empty()
-                    || rule_scheds
-                        .iter()
-                        .any(|s| s.enabled && s.schedule_type == ScheduleType::Realtime)
+                rule_scheds.is_empty() || rule_scheds.iter().any(is_active_realtime)
             })
             .collect();
         if rules.is_empty() {
@@ -216,10 +220,12 @@ impl AutomationPipeline {
         };
 
         let plan = build_execution_plan(
-            &RealFs,
-            &authority,
-            &self.classifier,
-            self.organizer.clock().as_ref(),
+            &PlanContext {
+                fs: &RealFs,
+                authority: &authority,
+                classifier: &self.classifier,
+                clock: self.organizer.clock().as_ref(),
+            },
             &rules,
             &[cand],
             &PlanScope {
@@ -313,46 +319,44 @@ impl AutomationPipeline {
         }
 
         let dirty_ids: Vec<String> = {
-            let mut guard = self
-                .dirty_folders
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let mut guard = self.dirty_folders.lock().unwrap_or_else(|e| e.into_inner());
             guard.drain().collect()
         };
 
-        for folder_id in dirty_ids {
-            let Some(folder) = repo_folders::get(&self.db, &folder_id).await? else {
-                continue;
-            };
-            if !folder.enabled {
-                continue;
-            }
-            let root = PathBuf::from(&folder.path);
-            let opts = ScanOptions {
-                recursive: folder.recursive,
-                rules: IgnoreRules {
-                    ignore_hidden: true,
-                    ignore_temporary: true,
-                    include_extensions: folder.settings.include_extensions.clone(),
-                    exclude_extensions: folder.settings.exclude_extensions.clone(),
-                    excluded_dirs: folder
-                        .settings
-                        .excluded_subfolders
-                        .iter()
-                        .map(PathBuf::from)
-                        .collect(),
-                },
-            };
-            let mut scanned_files = Vec::new();
-            let _ = scan(&root, &opts, &self.classifier, |batch| {
-                scanned_files.extend(batch);
-                Ok(())
-            });
-            for sf in scanned_files {
-                let outcome = self
-                    .process_file(&folder.id, &sf, BatchTrigger::Realtime)
-                    .await?;
-                outcomes.push(outcome);
+        if !dirty_ids.is_empty() {
+            let monitoring = SettingsService::new(self.db.clone())
+                .get()
+                .await?
+                .monitoring;
+            for folder_id in dirty_ids {
+                let Some(folder) = repo_folders::get(&self.db, &folder_id).await? else {
+                    continue;
+                };
+                if !folder.enabled {
+                    continue;
+                }
+                let spec = FolderScanSpec::from_folder(&folder, &monitoring);
+                let cls = self.classifier.clone();
+                let scanned_files = tokio::task::spawn_blocking(move || {
+                    let opts = ScanOptions {
+                        recursive: spec.recursive,
+                        rules: spec.rules,
+                    };
+                    let mut scanned_files = Vec::new();
+                    let _ = scan(&spec.path, &opts, &cls, |batch| {
+                        scanned_files.extend(batch);
+                        Ok(())
+                    });
+                    scanned_files
+                })
+                .await
+                .map_err(|e| AppError::Internal(format!("reconcile scan failed: {e}")))?;
+                for sf in scanned_files {
+                    let outcome = self
+                        .process_file(&folder.id, &sf, BatchTrigger::Realtime)
+                        .await?;
+                    outcomes.push(outcome);
+                }
             }
         }
 
@@ -421,21 +425,12 @@ mod tests {
         rule
     }
 
-    async fn setup_pipeline(
-        root: &Path,
-        capacity: usize,
-    ) -> (AutomationPipeline, Db, String) {
+    async fn setup_pipeline(root: &Path, capacity: usize) -> (AutomationPipeline, Db, String) {
         let db = database::open_in_memory().await.expect("db");
         let folder_id = "folder-dl".to_owned();
-        repo_folders::insert(
-            &db,
-            &folder_id,
-            "Downloads",
-            &root.to_string_lossy(),
-            true,
-        )
-        .await
-        .expect("insert folder");
+        repo_folders::insert(&db, &folder_id, "Downloads", &root.to_string_lossy(), true)
+            .await
+            .expect("insert folder");
 
         let ledger = Ledger::new(db.clone());
         let fs = Arc::new(SafeFs::with_trash_dir(root.join(".Trash")));
@@ -595,7 +590,10 @@ mod tests {
         );
 
         // Draining and reconciling processes the folder cleanly and clears the dirty flag.
-        let _ = pipe.drain_and_reconcile().await.expect("drain_and_reconcile");
+        let _ = pipe
+            .drain_and_reconcile()
+            .await
+            .expect("drain_and_reconcile");
         assert!(
             !pipe.is_folder_dirty(&folder_id),
             "reconcile must clear dirty flag"
@@ -616,9 +614,14 @@ mod tests {
         let f = root.join("draft_note.txt");
         write_file(&f, b"hello world");
         let sf = scanned_file_for(&f, "documents");
-        repo_files::upsert_batch(&db, &folder_id, std::slice::from_ref(&sf), 1_700_000_000_000)
-            .await
-            .expect("seed file_records");
+        repo_files::upsert_batch(
+            &db,
+            &folder_id,
+            std::slice::from_ref(&sf),
+            1_700_000_000_000,
+        )
+        .await
+        .expect("seed file_records");
 
         insert_rule(
             &db,
@@ -657,7 +660,10 @@ mod tests {
                 .fetch_one(&db)
                 .await
                 .expect("count old");
-        assert_eq!(old_count, 0, "old source path must be removed from file_records");
+        assert_eq!(
+            old_count, 0,
+            "old source path must be removed from file_records"
+        );
 
         let new_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM file_records WHERE path = ?1")
@@ -665,6 +671,124 @@ mod tests {
                 .fetch_one(&db)
                 .await
                 .expect("count new");
-        assert_eq!(new_count, 1, "new destination path must be upserted into file_records");
+        assert_eq!(
+            new_count, 1,
+            "new destination path must be upserted into file_records"
+        );
+    }
+
+    #[tokio::test]
+    async fn bug_023_realtime_pipeline_scopes_folder_schedules_and_enforces_quiet_hours() {
+        let (_d1, root1) = tempdir();
+        let (_d2, root2) = tempdir();
+        let db = database::open_in_memory().await.expect("db");
+        let f1 = "folder-1".to_owned();
+        let f2 = "folder-2".to_owned();
+        repo_folders::insert(&db, &f1, "One", &root1.to_string_lossy(), true)
+            .await
+            .expect("f1");
+        repo_folders::insert(&db, &f2, "Two", &root2.to_string_lossy(), true)
+            .await
+            .expect("f2");
+
+        // Clock is 1_700_000_000_000 ms == 2023-11-14T22:13:20Z.
+        let ledger = Ledger::new(db.clone());
+        let fs = Arc::new(SafeFs::with_trash_dir(root1.join(".Trash")));
+        let clock = Arc::new(FixedClock::utc(1_700_000_000_000));
+        let org = Organizer::new(ledger, fs, clock);
+        let cls = Arc::new(Classifier::new(builtin_categories()));
+        let auth = PathAuthority::new(vec![
+            ApprovedRoot {
+                path: root1.clone(),
+                kind: RootKind::Monitored,
+            },
+            ApprovedRoot {
+                path: root2.clone(),
+                kind: RootKind::Monitored,
+            },
+        ]);
+        let pipe = AutomationPipeline::new(db.clone(), org, cls, auth, 64);
+
+        let rule = insert_rule(
+            &db,
+            "r-shared",
+            "Shared Rule",
+            true,
+            ConditionNode::Leaf {
+                condition: Condition::Text {
+                    field: TextFieldKind::Name,
+                    op: TextOp::Contains,
+                    value: "scope_".into(),
+                    case_sensitive: false,
+                },
+            },
+            vec![Action::Move {
+                destination: root2.join("Sorted").to_string_lossy().into_owned(),
+            }],
+        )
+        .await;
+
+        // Bind a Manual schedule ONLY to (folder-1, r-shared). It must NOT suppress r-shared in folder-2!
+        repo_schedules::upsert(
+            &db,
+            &repo_schedules::Schedule {
+                id: "s-manual-f1".into(),
+                rule_id: Some(rule.id.clone()),
+                folder_id: Some(f1.clone()),
+                schedule_type: ScheduleType::Manual,
+                config: repo_schedules::ScheduleConfig::default(),
+                enabled: true,
+                last_run_at: None,
+                next_run_at: None,
+            },
+        )
+        .await
+        .expect("insert f1 manual schedule");
+
+        let f2_file = root2.join("scope_unblocked.txt");
+        write_file(&f2_file, b"hello f2");
+        pipe.enqueue(&f2, scanned_file_for(&f2_file, "documents"));
+        let outcomes = pipe.drain_and_reconcile().await.expect("drain f2");
+        assert!(
+            matches!(outcomes.as_slice(), [PipelineStepOutcome::Organized(_)]),
+            "BUG-023a: manual schedule on (f1, r-shared) must not suppress f2; got {outcomes:?}"
+        );
+        assert!(root2.join("Sorted/scope_unblocked.txt").exists());
+
+        // Now attach an enabled Realtime schedule on (f2, None) whose quiet_hours cover 22:13Z (22:00..23:00).
+        repo_schedules::upsert(
+            &db,
+            &repo_schedules::Schedule {
+                id: "s-rt-quiet-f2".into(),
+                rule_id: None,
+                folder_id: Some(f2.clone()),
+                schedule_type: ScheduleType::Realtime,
+                config: repo_schedules::ScheduleConfig {
+                    quiet_hours: Some(repo_schedules::QuietHours {
+                        start: "22:00".into(),
+                        end: "23:00".into(),
+                    }),
+                    ..Default::default()
+                },
+                enabled: true,
+                last_run_at: None,
+                next_run_at: None,
+            },
+        )
+        .await
+        .expect("insert quiet realtime schedule");
+
+        let quiet_file = root2.join("scope_quiet.txt");
+        write_file(&quiet_file, b"quiet bytes");
+        pipe.enqueue(&f2, scanned_file_for(&quiet_file, "documents"));
+        let quiet_outcomes = pipe.drain_and_reconcile().await.expect("drain quiet");
+        assert!(
+            quiet_file.exists()
+                && !matches!(
+                    quiet_outcomes.as_slice(),
+                    [PipelineStepOutcome::Organized(_)]
+                ),
+            "BUG-023b: realtime pipeline must pause during quiet_hours; got {quiet_outcomes:?}"
+        );
     }
 }

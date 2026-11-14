@@ -166,7 +166,22 @@ export const usePreview = create<PreviewState>((set, get) => ({
         selectedIds,
         conflictPolicy,
       );
-      set({ executing: false, lastReport: report });
+      const ranSet = new Set(selectedIds);
+      const staleIds = new Set(report.skippedStale.map((s) => s.itemId));
+      const isFailed = (item: PlanItem) =>
+        report.failed.some((msg) => msg.startsWith(`${item.sourcePath}: `));
+      const prevItems = get().items;
+      const nextItems = prevItems.filter(
+        (item) => !ranSet.has(item.id) || staleIds.has(item.id) || isFailed(item),
+      );
+      const prunedCount = prevItems.length - nextItems.length;
+      set({
+        executing: false,
+        lastReport: report,
+        items: nextItems,
+        total: Math.max(0, get().total - prunedCount),
+        selectedIds: selectedIds.filter((id) => !ranSet.has(id)),
+      });
       return report;
     } catch (e) {
       set({ executing: false, actionError: toUiError(e) });

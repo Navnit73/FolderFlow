@@ -46,7 +46,9 @@ impl ScheduleType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Type)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Type,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Weekday {
     Mon,
