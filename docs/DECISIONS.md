@@ -18,6 +18,7 @@ Append-only. Status: Proposed → Accepted → Superseded (by ADR-x).
 | 012 | IPC numbers for bytes/timestamps exported as TS `number` (`#[specta(type = f64)]`) | Accepted | 2026-11-13 |
 | 013 | Monitored folders may not overlap | Accepted | 2026-11-13 |
 | 014 | First scan and scope changes are a baseline, not "new files" | Accepted | 2026-11-13 |
+| 015 | Pure rule engine (`regex`, `glob`, `chrono`) over `FileFacts` and injectable `Clock` | Accepted | 2026-11-14 |
 
 ---
 
@@ -73,3 +74,6 @@ Adding a folder inside (or containing) an already-monitored folder is rejected. 
 
 ### ADR-014 — Baseline semantics
 The monitor reports only files that are new or changed since the folder's last complete scan. The first scan, and any change to a folder's scope (recursive, include/exclude extensions, excluded subfolders), records a baseline and reports nothing, so enabling FolderFlow never mass-processes files that were already there. See SAFETY_MODEL.md § New-file semantics.
+
+### ADR-015 — Pure rule engine (`regex`, `glob`, `chrono`) over `FileFacts` and injectable `Clock`
+**Decision:** The `rules` module performs zero filesystem or database I/O; it evaluates `ConditionNode` trees, renders path/naming templates, and runs rule chains purely over injected `FileFacts` and a `Clock` trait (`SystemClock` in production, `FixedClock` with configurable UTC offset and DST transitions in tests). Direct dependencies `regex 1` (linear-time NFA/DFA with explicit compile size limits for FR-048), `glob 0.3` (for FR-047), and `chrono 0.4` (for local calendar date calculations in FR-045/FR-070) are promoted from existing transitive dependencies in `Cargo.lock`.

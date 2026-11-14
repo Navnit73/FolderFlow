@@ -12,6 +12,7 @@ pub mod error;
 pub mod events;
 pub mod folders;
 pub mod logging;
+pub mod rules;
 pub mod security;
 pub mod settings;
 pub mod system;
@@ -46,6 +47,20 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::monitoring::monitoring_status,
             commands::monitoring::monitoring_set_paused,
             commands::monitoring::categories_list,
+            commands::rules::rules_list,
+            commands::rules::rules_get,
+            commands::rules::rules_create,
+            commands::rules::rules_create_from_preset,
+            commands::rules::rules_update,
+            commands::rules::rules_delete,
+            commands::rules::rules_reorder,
+            commands::rules::rules_set_enabled,
+            commands::rules::rules_duplicate,
+            commands::rules::rules_validate,
+            commands::rules::rules_presets,
+            commands::rules::template_preview,
+            commands::rules::rules_test_folder,
+            commands::rules::rules_pick_destination_folder,
         ])
         .events(collect_events![
             events::FolderStatusEvent,

@@ -2,7 +2,7 @@
 
 **Your files organized automatically.** An offline-first, privacy-first automatic file organizer for macOS 13+, built with Tauri 2, Rust and React.
 
-> Status: **Phase 2 (filesystem engine) complete.** Next: Phase 3 — rule engine. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
+> Status: **Phase 3 (rule engine) complete.** Next: Phase 4 — safe operations. See [docs/PLAN_TRACKER.md](docs/PLAN_TRACKER.md).
 
 ## Documentation
 
@@ -41,9 +41,9 @@ App data: `~/Library/Application Support/com.folderflow.desktop/` · Logs: `~/Li
 
 ### Troubleshooting
 
-**`ld: tapi error: … unknown architecture arm64e.x1-macos`** — your Command Line Tools linker is older than the default macOS SDK (ENV-001). Either update the Command Line Tools / Xcode, or point builds at an older installed SDK:
+**`ld: tapi error: … unknown architecture arm64e.x1-macos`** — your Command Line Tools linker is older than the versioned macOS SDK selected by `xcrun` (ENV-001). `src-tauri/.cargo/config.toml` sets `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk` automatically for Cargo builds; if running outside Cargo, either update Command Line Tools / Xcode or export:
 
 ```bash
-export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
 ```
 # FolderFlow

@@ -4,7 +4,13 @@
  * and call `resetBindingMocks()` in beforeEach.
  */
 import { vi } from "vitest";
-import type { FolderActivityEvent, FolderRuntime_Serialize, MonitoredFolder_Serialize } from "@/bindings";
+import type {
+  FolderActivityEvent,
+  FolderRuntime_Serialize,
+  MonitoredFolder_Serialize,
+  RuleTemplate_Serialize,
+  Rule_Serialize,
+} from "@/bindings";
 import { appInfoFixture, defaultSettings } from "./fixtures";
 
 type Listener<T> = (e: { payload: T }) => void;
@@ -31,6 +37,20 @@ export const commands = {
   monitoringStatus: vi.fn(),
   monitoringSetPaused: vi.fn(),
   categoriesList: vi.fn(),
+  rulesList: vi.fn(),
+  rulesGet: vi.fn(),
+  rulesCreate: vi.fn(),
+  rulesCreateFromPreset: vi.fn(),
+  rulesUpdate: vi.fn(),
+  rulesDelete: vi.fn(),
+  rulesReorder: vi.fn(),
+  rulesSetEnabled: vi.fn(),
+  rulesDuplicate: vi.fn(),
+  rulesValidate: vi.fn(),
+  rulesPresets: vi.fn(),
+  templatePreview: vi.fn(),
+  rulesTestFolder: vi.fn(),
+  rulesPickDestinationFolder: vi.fn(),
 };
 
 export const events = {
@@ -78,6 +98,70 @@ export function runtimeFixture(over: Partial<FolderRuntime_Serialize> = {}): Fol
   return { folderId: "f1", state: "watching", pendingEvents: 0, trackedFiles: 0, lastError: null, lastEventAt: null, ...over };
 }
 
+export function ruleFixture(over: Partial<Rule_Serialize> = {}): Rule_Serialize {
+  return {
+    id: "r1",
+    name: "Organize Invoices",
+    description: "Move PDF invoices into dated folders",
+    enabled: true,
+    priority: 10,
+    sourceFolders: [],
+    conditions: {
+      type: "all",
+      children: [
+        {
+          type: "leaf",
+          condition: {
+            kind: "text",
+            field: "extension",
+            op: "equals",
+            value: "pdf",
+            case_sensitive: false,
+          },
+        },
+      ],
+    },
+    actions: [
+      {
+        kind: "move_into_dynamic_folder",
+        root: null,
+        subpath_template: "Documents/Invoices/{year}/{month_name}",
+      },
+    ],
+    dateSource: "modified",
+    executionMode: "first_match",
+    origin: "user",
+    lastRunAt: null,
+    statMatched: 12,
+    statSucceeded: 12,
+    statFailed: 0,
+    createdAt: Date.now() - 86_400_000,
+    updatedAt: Date.now() - 3_600_000,
+    ...over,
+  };
+}
+
+export function presetFixture(over: Partial<RuleTemplate_Serialize> = {}): RuleTemplate_Serialize {
+  const base = ruleFixture();
+  return {
+    id: "pdfs",
+    name: "Organize PDFs",
+    description: "Moves PDF documents into Documents/PDFs.",
+    categoryHint: "documents",
+    draft: {
+      name: base.name,
+      description: base.description,
+      enabled: false,
+      sourceFolders: [],
+      conditions: base.conditions,
+      actions: base.actions,
+      dateSource: "modified",
+      executionMode: "first_match",
+    },
+    ...over,
+  };
+}
+
 /** Restores default successful responses for every command. */
 export function resetBindingMocks(): void {
   statusListeners.clear();
@@ -96,4 +180,25 @@ export function resetBindingMocks(): void {
   commands.foldersAccess.mockResolvedValue(ok("granted"));
   commands.openPrivacySettings.mockResolvedValue(ok(true));
   commands.categoriesList.mockResolvedValue(ok([]));
+  commands.rulesList.mockResolvedValue(ok([]));
+  commands.rulesPresets.mockResolvedValue(ok([presetFixture()]));
+  commands.rulesValidate.mockResolvedValue(ok([]));
+  commands.rulesDelete.mockResolvedValue(ok(null));
+  commands.rulesPickDestinationFolder.mockResolvedValue(ok(null));
+  commands.templatePreview.mockImplementation(async (input: { template: string; isFilename?: boolean }) =>
+    ok({
+      valid: true,
+      rendered: input.isFilename ? "2026-04-15_invoice.pdf" : "Documents/Invoices/2026/April",
+      error: null,
+    }),
+  );
+  commands.rulesTestFolder.mockResolvedValue(
+    ok({
+      folderId: "f1",
+      folderName: "Downloads",
+      evaluatedFiles: 10,
+      matchedFiles: 2,
+      sampleMatches: [],
+    }),
+  );
 }

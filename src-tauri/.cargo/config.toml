@@ -1,0 +1,7 @@
+# Workaround for ENV-001: when a newer macOS SDK (e.g. MacOSX27.0.sdk) is present
+# alongside an older Command Line Tools linker, xcrun picks the versioned SDK whose
+# TAPI stubs use architectures (arm64e.x1-macos) unknown to the older linker.
+# Pointing SDKROOT at the unversioned MacOSX.sdk symlink selects the SDK that
+# matches the installed Command Line Tools toolchain.
+[env]
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"

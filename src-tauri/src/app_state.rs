@@ -15,6 +15,7 @@ use crate::error::{AppError, AppResult};
 use crate::events::TauriObserver;
 use crate::folders::FolderService;
 use crate::logging;
+use crate::rules::RuleService;
 use crate::settings::{LogLevel, SettingsService};
 
 pub const DB_FILE_NAME: &str = "folderflow.db";
@@ -31,6 +32,7 @@ pub struct AppState {
     pub settings: SettingsService,
     pub categories: CategoryService,
     pub folders: FolderService,
+    pub rules: RuleService,
     pub monitor: Arc<MonitorService>,
     pub paths: AppPaths,
     _log_guard: Mutex<Option<WorkerGuard>>,
@@ -68,13 +70,12 @@ impl AppState {
         categories.ensure_builtins().await?;
         let classifier = Arc::new(Classifier::new(categories.list().await?));
 
-        let folders = FolderService::new(
-            db.clone(),
-            RootPolicy {
-                home,
-                app_data_dir: paths.data_dir.clone(),
-            },
-        );
+        let root_policy = RootPolicy {
+            home,
+            app_data_dir: paths.data_dir.clone(),
+        };
+        let folders = FolderService::new(db.clone(), root_policy.clone());
+        let rules = RuleService::new(db.clone(), root_policy);
 
         let monitor = Arc::new(MonitorService::new(MonitorDeps::new(
             db.clone(),
@@ -94,6 +95,7 @@ impl AppState {
             settings,
             categories,
             folders,
+            rules,
             monitor,
             paths,
             _log_guard: Mutex::new(Some(guard)),

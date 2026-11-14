@@ -122,3 +122,52 @@ pub async fn folder_summary(db: &Db, folder_id: &str) -> AppResult<Vec<(String, 
     .fetch_all(db)
     .await?)
 }
+
+/// Loads tracked files for a folder as pure `FileFacts` snapshots for dry-run / rule testing.
+pub async fn list_facts_for_folder(
+    db: &Db,
+    folder_id: &str,
+    folder_path: &str,
+    folder_name: &str,
+) -> AppResult<Vec<crate::rules::models::FileFacts>> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT path, filename, extension, category, size, created_at_ns, modified_at_ns, \
+         last_scanned_at, content_hash, mime FROM file_records WHERE folder_id = ?1 ORDER BY filename",
+    )
+    .bind(folder_id)
+    .fetch_all(db)
+    .await?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let filename: String = row.try_get("filename")?;
+        let ext_opt: Option<String> = row.try_get("extension")?;
+        let (stem, split_ext) = crate::rules::models::FileFacts::split_name(&filename);
+        let extension = ext_opt.unwrap_or(split_ext);
+        let size_i64: i64 = row.try_get("size")?;
+        let created_ns: Option<i64> = row.try_get("created_at_ns")?;
+        let modified_ns: i64 = row.try_get("modified_at_ns")?;
+        let scanned_at: i64 = row.try_get("last_scanned_at")?;
+        let category: Option<String> = row.try_get("category")?;
+        out.push(crate::rules::models::FileFacts {
+            path: row.try_get("path")?,
+            name: filename.clone(),
+            stem,
+            extension,
+            mime: row.try_get("mime")?,
+            category: category.unwrap_or_else(|| "other".into()),
+            size: u64::try_from(size_i64).unwrap_or(0),
+            created_ms: created_ns.map(|ns| ns / 1_000_000),
+            modified_ms: modified_ns / 1_000_000,
+            added_ms: Some(scanned_at),
+            is_hidden: filename.starts_with('.'),
+            is_duplicate: false,
+            content_hash: row.try_get("content_hash")?,
+            source_folder_id: folder_id.to_owned(),
+            source_folder_path: folder_path.to_owned(),
+            source_folder_name: folder_name.to_owned(),
+        });
+    }
+    Ok(out)
+}

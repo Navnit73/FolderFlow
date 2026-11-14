@@ -80,8 +80,8 @@ Added during Phase 1: R-DB-05 (CHECK constraints), R-SET-04 (corrupt section →
 
 **Watcher tests are timing-sensitive by nature.** They use bounded waits (15 s), fast timing, and real FSEvents. Every phase audit runs the full Rust suite ≥ 10 times; any failure is investigated as a bug (BUG-013 was found this way), never retried away.
 
-### Phase 3 — Rule engine (40)
-R-RULE-01..06 · R-COND-01..15 (every operator family, tz-aware dates via FixedClock, DST boundaries) · R-GRP-01..05 (proptest: `Not(Not(x)) == x`, De Morgan equivalence, empty All = true / empty Any = false, depth limit) · R-VAL-01..06 · R-TPL-01..08 (proptest: output never contains `..`, `/` from variables, NUL, `:`; length limits; inside root) · R-EVAL-01..06 (priority, each execution mode, apply-rule cycle detected, per-pass move limit) · R-TMPL-01..03 (presets valid + disabled) · UI-RULES-01..03 · UI-RB-01..06 (add/remove/nest/reorder conditions, validation errors shown, template preview calls Rust)
+### Phase 3 — Rule engine (67 implemented)
+R-RULE-01..06 · R-COND-01..15 + `r_cond_prop_evaluators_never_panic_and_are_deterministic` (every operator family, tz-aware dates via FixedClock, DST boundaries) · R-GRP-01..05 + `r_grp_05_proptest_boolean_algebra_laws` (proptest 10k cases: `Not(Not(x)) == x`, De Morgan equivalence, empty All = true / empty Any = false, depth limit) · R-VAL-01..06 · R-TPL-01..08 + `r_tpl_prop_output_never_contains_traversal_or_invalid_chars` (proptest 10k cases: output never contains `..`, `/` from variables, NUL, `:`; length limits; inside root) · R-EVAL-01..06 (priority, each execution mode, apply-rule cycle detected, per-pass move limit, spec §6.2 end-to-end) · R-TMPL-01..03 (7 starter presets valid + disabled) · BUG-014..017 regression tests · UI-RULES-01..03 · UI-RB-01..06 (add/remove/nest/reorder conditions, validation errors/warnings shown, live template preview & dry-run folder test call Rust)
 
 ### Phase 4 — Safe operations (42)
 R-SFS-01..10 (rename_excl refuses existing dest; copy_excl refuses existing; fsync called; trash works; EXDEV detected; symlink dest parent refused; fault injection each step) ·

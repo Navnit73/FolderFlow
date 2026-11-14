@@ -1,3 +1,4 @@
-//! Small shared helpers with no business logic.
+//! Shared low-level helpers.
 
+pub mod clock;
 pub mod time;

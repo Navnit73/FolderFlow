@@ -83,14 +83,14 @@ folderflow/
 │   │   ├── folders/           monitored-folder registry, probe_access, overlap rule          [P2]
 │   │   ├── system/            macOS integration via objc2 (System Settings link)             [P2]
 │   │   ├── events.rs          typed events + TauriObserver                                    [P2]
-│   │   ├── rules/ models.rs conditions.rs actions.rs evaluator.rs templates.rs validate.rs presets.rs
+│   │   ├── rules/ models.rs conditions.rs evaluator.rs templates.rs validate.rs presets.rs service.rs [P3]
 │   │   ├── duplicates/ hasher.rs cache.rs finder.rs
 │   │   ├── database/ pool.rs repo_*.rs
 │   │   ├── notifications/ service.rs throttle.rs
 │   │   ├── security/ capabilities.rs license.rs keychain.rs
 │   │   ├── system/ tray.rs login_item.rs power.rs volumes.rs
 │   │   ├── config_io/ export.rs import.rs schema.rs
-│   │   └── utils/ time.rs (clock.rs added with the scheduler)
+│   │   └── utils/ time.rs clock.rs                                                               [P3]
 │   ├── migrations/0001_init.sql …
 │   ├── capabilities/default.json
 │   ├── clippy.toml               disallowed_methods
@@ -164,10 +164,12 @@ All commands are `async`, return `Result<T, UiError>`, and are exported to TS vi
 | monitoring | `monitoring_status` | → `MonitoringStatus { paused, folders: [FolderRuntime] }` |
 | | `monitoring_set_paused` | `paused` → `MonitoringStatus` |
 | categories | `categories_list` | → `Vec<Category>` (create/update/delete/set_enabled ship with P6-T08) |
-| rules | `rules_list/get/create/update/delete/reorder/set_enabled/duplicate` | |
-| | `rules_validate` | `RuleDraft` → `Vec<ValidationIssue>` |
-| | `rules_presets` | → `Vec<RuleTemplate>` |
-| | `template_preview` | `{template, sample: SampleFile}` → `Result<String, TemplateError>` |
+| rules | `rules_list/get/create/create_from_preset/update/delete/reorder/set_enabled/duplicate` | CRUD, priority reorder, duplicate, preset install |
+| | `rules_validate` | `(RuleDraft, current_rule_id)` → `Vec<ValidationIssue>` |
+| | `rules_presets` | → `Vec<RuleTemplate>` (7 starter templates, all disabled) |
+| | `template_preview` | `TemplatePreviewInput` → `TemplatePreviewOutput` |
+| | `rules_test_folder` | `(RuleDraft, folder_id)` → `RuleTestReport` (dry-run against scanned files) |
+| | `rules_pick_destination_folder` | → `Option<String>` (native folder picker; registers approved destination root) |
 | preview | `plan_create` | `PlanScope {folder?, rule?, files?}` → `PlanSummary` (+ `plan_id`) |
 | | `plan_items` | `{plan_id, filter, page}` → `Page<PlanItemView>` |
 | | `plan_execute` | `{plan_id, selected: Vec<ItemId>}` → `BatchId` (progress via events) |
@@ -208,8 +210,8 @@ The frontend never receives a raw "move this path to that path" command. It only
 | `/onboarding/:step` | Onboarding | shown when `onboarding_state.complete == false` |
 | `/` | Overview | dashboard (until it ships, `/` redirects to the first available screen) |
 | `/folders`, `/folders/:id` | Folders ✅ | list + detail (status, overview by category, settings form, recent problems) |
-| `/rules` | Rules | |
-| `/rules/new`, `/rules/:id` | RuleBuilder | |
+| `/rules` | Rules ✅ | priority-ordered list, starter preset menu, enable toggle, reorder, duplicate, delete |
+| `/rules/new`, `/rules/:id` | RuleBuilder ✅ | nested condition tree editor, actions list, live validation, template preview, dry-run folder test |
 | `/preview` | Preview | `?folder=`, `?rule=` |
 | `/activity` | Activity | |
 | `/duplicates` | Duplicates | |

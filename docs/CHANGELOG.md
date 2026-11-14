@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: SemVer.
 
 ## [Unreleased]
 
+### Added — Phase 3 (Rule engine)
+- Rules screen (`/rules`): priority-ordered list, enable/disable switches, priority reorder, duplicate, delete with confirmation, and starter rule templates menu (Organize PDFs, Organize Screenshots, Organize Images, Organize Videos, Organize Archives, Organize Invoices & Receipts, Clean Old Downloads — all created disabled by default).
+- Visual Rule Builder (`/rules/new`, `/rules/:id`): nested `ALL`/`ANY`/`NOT` condition groups (up to depth 5), 11 condition families (text/regex, extension group, category, decimal file size `1 KB = 1000 B`, local-timezone date operators, location, glob, hidden, empty, duplicate status, BLAKE3 hash), 16 safe action types (no shell/command execution), naming preset chips, native destination folder picker, live template preview, inline validation errors/warnings, and dry-run "Test rule on folder".
+- Pure Rust rule engine (`src-tauri/src/rules/`): versioned JSON condition/action envelopes (`"v": 1`), timezone- and DST-aware `Clock` trait (`SystemClock` + `FixedClock`), linear-time regex validation with `256 KiB` size cap, variable sanitization and `PathAuthority` root containment on dynamic templates, priority evaluation across 5 execution modes, per-pass move/action limits, `ApplyAnotherRule` cycle & depth guards, and destination loop detection (`FR-054`).
+
+### Fixed — Phase 3 audit
+- BUG-014 … BUG-017 (see docs/BUGS.md): UTF-8 char-boundary truncation when duplicating long multi-byte rule names, literal `{`/`}` braces in `AddPrefix`/`AddSuffix` actions, multi-hop `ApplyAnotherRule` cycle validation at save time, and `NOT(InsideSubdirectory)` loop-guard checks inside `ANY` condition groups.
+
 ### Added — Phase 2 (Filesystem engine)
 - Folders screen: add Downloads/Desktop/Documents/Pictures/Movies/Music or any folder via the native picker; live status (Watching, Paused, Unavailable, No access, Error); pause/resume/rescan per folder and globally; remove (files untouched); detail page with per-category storage, settings (name, enabled, include subfolders, skip/only extensions, skipped subfolders, stability override) and recent problems; "Open System Settings" when access is missing.
 - Sidebar monitoring indicator.

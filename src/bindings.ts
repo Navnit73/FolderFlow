@@ -40,6 +40,21 @@ export const commands = {
 	/**  Pauses or resumes all monitoring (FR-018, menu bar in Phase 7). */
 	monitoringSetPaused: (paused: boolean, options?: InvokeOptions) => typedError<MonitoringStatus_Serialize, UiError_Serialize>(__TAURI_INVOKE("monitoring_set_paused", { paused }, options)),
 	categoriesList: (options?: InvokeOptions) => typedError<Category_Serialize[], UiError_Serialize>(__TAURI_INVOKE("categories_list", undefined, options)),
+	rulesList: (options?: InvokeOptions) => typedError<Rule_Serialize[], UiError_Serialize>(__TAURI_INVOKE("rules_list", undefined, options)),
+	rulesGet: (id: string, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_get", { id }, options)),
+	rulesCreate: (draft: RuleDraft_Deserialize, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_create", { draft }, options)),
+	rulesCreateFromPreset: (presetId: string, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_create_from_preset", { presetId }, options)),
+	rulesUpdate: (id: string, draft: RuleDraft_Deserialize, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_update", { id, draft }, options)),
+	rulesDelete: (id: string, options?: InvokeOptions) => typedError<null, UiError_Serialize>(__TAURI_INVOKE("rules_delete", { id }, options)),
+	rulesReorder: (orderedIds: string[], options?: InvokeOptions) => typedError<Rule_Serialize[], UiError_Serialize>(__TAURI_INVOKE("rules_reorder", { orderedIds }, options)),
+	rulesSetEnabled: (id: string, enabled: boolean, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_set_enabled", { id, enabled }, options)),
+	rulesDuplicate: (id: string, options?: InvokeOptions) => typedError<Rule_Serialize, UiError_Serialize>(__TAURI_INVOKE("rules_duplicate", { id }, options)),
+	rulesValidate: (draft: RuleDraft_Deserialize, currentRuleId: string | null, options?: InvokeOptions) => typedError<ValidationIssue[], UiError_Serialize>(__TAURI_INVOKE("rules_validate", { draft, currentRuleId }, options)),
+	rulesPresets: (options?: InvokeOptions) => typedError<RuleTemplate_Serialize[], UiError_Serialize>(__TAURI_INVOKE("rules_presets", undefined, options)),
+	templatePreview: (input: TemplatePreviewInput_Deserialize, options?: InvokeOptions) => typedError<TemplatePreviewOutput_Serialize, UiError_Serialize>(__TAURI_INVOKE("template_preview", { input }, options)),
+	rulesTestFolder: (draft: RuleDraft_Deserialize, folderId: string, options?: InvokeOptions) => typedError<RuleTestReport, UiError_Serialize>(__TAURI_INVOKE("rules_test_folder", { draft, folderId }, options)),
+	/**  Opens the native folder picker to select and approve a destination folder. */
+	rulesPickDestinationFolder: (options?: InvokeOptions) => typedError<string | null, UiError_Serialize>(__TAURI_INVOKE("rules_pick_destination_folder", undefined, options)),
 };
 
 /** Events */
@@ -49,6 +64,15 @@ export const events = {
 };
 
 /* Types */
+/**  Rule actions (FR-050). No shell/script/command execution exists (FR-051). */
+export type Action = Action_Serialize | Action_Deserialize;
+
+/**  Rule actions (FR-050). No shell/script/command execution exists (FR-051). */
+export type Action_Deserialize = { kind: "move"; destination: string } | { kind: "move_into_dynamic_folder"; root?: string | null; subpath_template: string } | { kind: "copy"; destination: string } | { kind: "rename"; template: string } | { kind: "add_prefix"; prefix: string } | { kind: "add_suffix"; suffix: string } | { kind: "remove_text"; text: string; case_sensitive?: boolean } | { kind: "replace_text"; find: string; replace: string; case_sensitive?: boolean } | { kind: "add_date_to_filename"; placement?: DatePlacement; format?: string } | { kind: "change_extension"; new_extension: string; confirm_unsafe?: boolean } | { kind: "create_destination_folder"; path: string } | { kind: "skip" } | { kind: "stop_processing" } | { kind: "notify"; message: string } | { kind: "mark_for_review"; reason: string } | { kind: "apply_another_rule"; rule_id: string };
+
+/**  Rule actions (FR-050). No shell/script/command execution exists (FR-051). */
+export type Action_Serialize = { kind: "move"; destination: string } | { kind: "move_into_dynamic_folder"; root: string | null; subpath_template: string } | { kind: "copy"; destination: string } | { kind: "rename"; template: string } | { kind: "add_prefix"; prefix: string } | { kind: "add_suffix"; suffix: string } | { kind: "remove_text"; text: string; case_sensitive: boolean } | { kind: "replace_text"; find: string; replace: string; case_sensitive: boolean } | { kind: "add_date_to_filename"; placement: DatePlacement; format: string } | { kind: "change_extension"; new_extension: string; confirm_unsafe: boolean } | { kind: "create_destination_folder"; path: string } | { kind: "skip" } | { kind: "stop_processing" } | { kind: "notify"; message: string } | { kind: "mark_for_review"; reason: string } | { kind: "apply_another_rule"; rule_id: string };
+
 export type AppInfo = {
 	version: string,
 	dataDir: string,
@@ -114,14 +138,43 @@ export type Category_Serialize = {
 	enabled: boolean,
 };
 
+export type Condition = Condition_Serialize | Condition_Deserialize;
+
+export type ConditionNode = ConditionNode_Serialize | ConditionNode_Deserialize;
+
+export type ConditionNode_Deserialize = { type: "all"; children: ConditionNode_Deserialize[] } | { type: "any"; children: ConditionNode_Deserialize[] } | { type: "not"; child: ConditionNode_Deserialize } | { type: "leaf"; condition: Condition_Deserialize };
+
+export type ConditionNode_Serialize = { type: "all"; children: ConditionNode_Serialize[] } | { type: "any"; children: ConditionNode_Serialize[] } | { type: "not"; child: ConditionNode_Serialize } | { type: "leaf"; condition: Condition_Serialize };
+
+export type Condition_Deserialize = { kind: "text"; field: TextFieldKind; op: TextOp; value: string; case_sensitive?: boolean } | { kind: "category"; category_id: string; negate?: boolean } | { kind: "size"; op: SizeOp; value: number; max_value?: number | null; unit?: SizeUnit } | { kind: "date"; field: DateField; op: DateConditionOp } | { kind: "location"; op: LocationOp_Deserialize } | { kind: "hidden"; is_hidden: boolean } | { kind: "empty_file"; is_empty: boolean } | { kind: "duplicate_status"; is_duplicate: boolean } | { kind: "content_hash"; hash: string } | { kind: "filename_glob"; pattern: string; case_sensitive?: boolean } | { kind: "extension_group"; extensions: string[] };
+
+export type Condition_Serialize = { kind: "text"; field: TextFieldKind; op: TextOp; value: string; case_sensitive: boolean } | { kind: "category"; category_id: string; negate: boolean } | { kind: "size"; op: SizeOp; value: number; max_value: number | null; unit: SizeUnit } | { kind: "date"; field: DateField; op: DateConditionOp } | { kind: "location"; op: LocationOp_Serialize } | { kind: "hidden"; is_hidden: boolean } | { kind: "empty_file"; is_empty: boolean } | { kind: "duplicate_status"; is_duplicate: boolean } | { kind: "content_hash"; hash: string } | { kind: "filename_glob"; pattern: string; case_sensitive: boolean } | { kind: "extension_group"; extensions: string[] };
+
 export type ConflictPolicy = "auto_rename" | "skip" | "ask" | "keep_both";
 
 export type CpuPreference = "low" | "balanced" | "high";
+
+export type DateConditionOp = { op: "before"; date: string } | { op: "after"; date: string } | { op: "within_range"; start: string; end: string } | { op: "older_than_days"; days: number } | { op: "newer_than_days"; days: number } | { op: "today" } | { op: "yesterday" } | { op: "this_week" } | { op: "this_month" } | { op: "this_year" };
+
+export type DateField = "created" | "modified" | "added";
+
+export type DatePlacement = "prefix" | "suffix";
+
+/**  Which timestamp on the file populates `{year}`, `{month}`, `{day}`, `{date}`, `{month_name}` (FR-071). */
+export type DateSource = "modified" | "created" | "added" | "now";
 
 export type Density = "comfortable" | "compact";
 
 /**  Stable error codes. The UI switches on these; never rename a variant. */
 export type ErrorCode = "database" | "io" | "permission_denied" | "not_found" | "validation" | "internal";
+
+export type EvaluatedAction = {
+	ruleId: string,
+	ruleName: string,
+	op: PlannedOp,
+};
+
+export type ExecutionMode = "first_match" | "continue" | "stop_after_move" | "stop_after_action" | "sequential";
 
 export type FileActivityKind = "stable" | "removed";
 
@@ -240,6 +293,12 @@ export type GeneralSettings_Serialize = {
 /**  Standard macOS folders offered in onboarding (FR-002). */
 export type KnownFolder = "downloads" | "desktop" | "documents" | "pictures" | "movies" | "music";
 
+export type LocationOp = LocationOp_Serialize | LocationOp_Deserialize;
+
+export type LocationOp_Deserialize = { op: "source_folder_equals"; folder: string } | { op: "source_folder_contains"; text: string } | { op: "inside_directory"; path: string } | { op: "inside_subdirectory"; subpath?: string | null };
+
+export type LocationOp_Serialize = { op: "source_folder_equals"; folder: string } | { op: "source_folder_contains"; text: string } | { op: "inside_directory"; path: string } | { op: "inside_subdirectory"; subpath: string | null };
+
 export type LogLevel = "normal" | "verbose";
 
 export type MonitoredFolder = MonitoredFolder_Serialize | MonitoredFolder_Deserialize;
@@ -352,6 +411,8 @@ export type PerformanceSettings_Serialize = {
 	maxScanConcurrency: number,
 };
 
+export type PlannedOp = { kind: "move"; destination_dir: string } | { kind: "copy"; destination_dir: string } | { kind: "rename"; new_name: string } | { kind: "create_folder"; path: string } | { kind: "notify"; message: string } | { kind: "mark_for_review"; reason: string };
+
 export type PrivacySettings = PrivacySettings_Serialize | PrivacySettings_Deserialize;
 
 export type PrivacySettings_Deserialize = {
@@ -366,9 +427,131 @@ export type PrivacySettings_Serialize = {
 	logRetentionDays: number,
 };
 
+export type Rule = Rule_Serialize | Rule_Deserialize;
+
+export type RuleDraft = RuleDraft_Serialize | RuleDraft_Deserialize;
+
+export type RuleDraft_Deserialize = {
+	name: string,
+	description?: string | null,
+	enabled: boolean,
+	sourceFolders?: string[],
+	conditions: ConditionNode_Deserialize,
+	actions: Action_Deserialize[],
+	dateSource?: DateSource,
+	executionMode?: ExecutionMode,
+};
+
+export type RuleDraft_Serialize = {
+	name: string,
+	description: string | null,
+	enabled: boolean,
+	sourceFolders: string[],
+	conditions: ConditionNode_Serialize,
+	actions: Action_Serialize[],
+	dateSource: DateSource,
+	executionMode: ExecutionMode,
+};
+
 export type RuleExecutionMode = "first_match" | "continue" | "stop_after_move" | "stop_after_action" | "sequential";
 
+export type RuleOrigin = "user" | "preset" | "import";
+
+export type RuleTemplate = RuleTemplate_Serialize | RuleTemplate_Deserialize;
+
+export type RuleTemplate_Deserialize = {
+	id: string,
+	name: string,
+	description: string,
+	categoryHint: string,
+	draft: RuleDraft_Deserialize,
+};
+
+export type RuleTemplate_Serialize = {
+	id: string,
+	name: string,
+	description: string,
+	categoryHint: string,
+	draft: RuleDraft_Serialize,
+};
+
+export type RuleTestMatchItem = {
+	path: string,
+	originalName: string,
+	finalFilename: string,
+	finalDirectory: string,
+	actions: EvaluatedAction[],
+};
+
+export type RuleTestReport = {
+	folderId: string,
+	folderName: string,
+	evaluatedFiles: number,
+	matchedFiles: number,
+	sampleMatches: RuleTestMatchItem[],
+};
+
+export type Rule_Deserialize = {
+	id: string,
+	name: string,
+	description?: string | null,
+	enabled: boolean,
+	priority: number,
+	sourceFolders: string[],
+	conditions: ConditionNode_Deserialize,
+	actions: Action_Deserialize[],
+	dateSource?: DateSource,
+	executionMode: ExecutionMode,
+	origin: RuleOrigin,
+	lastRunAt?: number | null,
+	statMatched: number,
+	statSucceeded: number,
+	statFailed: number,
+	createdAt: number | null,
+	updatedAt: number | null,
+};
+
+export type Rule_Serialize = {
+	id: string,
+	name: string,
+	description: string | null,
+	enabled: boolean,
+	priority: number,
+	sourceFolders: string[],
+	conditions: ConditionNode_Serialize,
+	actions: Action_Serialize[],
+	dateSource: DateSource,
+	executionMode: ExecutionMode,
+	origin: RuleOrigin,
+	lastRunAt: number | null,
+	statMatched: number,
+	statSucceeded: number,
+	statFailed: number,
+	createdAt: number | null,
+	updatedAt: number | null,
+};
+
 export type RuntimeState = "starting" | "scanning" | "watching" | "paused" | "unavailable" | "permission_denied" | "error" | "stopped";
+
+export type SampleFile = SampleFile_Serialize | SampleFile_Deserialize;
+
+export type SampleFile_Deserialize = {
+	name: string,
+	category: string,
+	sourceFolder: string,
+	modifiedMs?: number | null,
+	createdMs?: number | null,
+	addedMs?: number | null,
+};
+
+export type SampleFile_Serialize = {
+	name: string,
+	category: string,
+	sourceFolder: string,
+	modifiedMs: number | null,
+	createdMs: number | null,
+	addedMs: number | null,
+};
 
 export type Settings = Settings_Serialize | Settings_Deserialize;
 
@@ -389,6 +572,45 @@ export type Settings_Serialize = {
 	appearance: AppearanceSettings_Serialize,
 	privacy: PrivacySettings_Serialize,
 };
+
+export type SizeOp = "greater_than" | "less_than" | "equals" | "between";
+
+/**  Decimal storage units (FR-044: 1 KB = 1000 B). */
+export type SizeUnit = "bytes" | "kilobytes" | "megabytes" | "gigabytes";
+
+export type TemplatePreviewInput = TemplatePreviewInput_Serialize | TemplatePreviewInput_Deserialize;
+
+export type TemplatePreviewInput_Deserialize = {
+	template: string,
+	isFilename?: boolean,
+	dateSource?: DateSource,
+	sample: SampleFile_Deserialize,
+};
+
+export type TemplatePreviewInput_Serialize = {
+	template: string,
+	isFilename: boolean,
+	dateSource: DateSource,
+	sample: SampleFile_Serialize,
+};
+
+export type TemplatePreviewOutput = TemplatePreviewOutput_Serialize | TemplatePreviewOutput_Deserialize;
+
+export type TemplatePreviewOutput_Deserialize = {
+	valid: boolean,
+	rendered?: string | null,
+	error?: string | null,
+};
+
+export type TemplatePreviewOutput_Serialize = {
+	valid: boolean,
+	rendered: string | null,
+	error: string | null,
+};
+
+export type TextFieldKind = "name" | "stem" | "extension" | "mime_type" | "full_path" | "parent_folder";
+
+export type TextOp = "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "matches_regex";
 
 export type ThemeMode = "system" | "light" | "dark";
 
@@ -412,6 +634,15 @@ export type UiError_Serialize = {
 	/**  Set for validation errors: which field was invalid (e.g. `monitoring.stabilityIntervalSecs`). */
 	field: string | null,
 };
+
+export type ValidationIssue = {
+	field: string,
+	code: string,
+	message: string,
+	severity: ValidationSeverity,
+};
+
+export type ValidationSeverity = "error" | "warning";
 
 export type WatcherErrorView = {
 	code: string,

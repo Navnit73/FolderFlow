@@ -3,7 +3,7 @@
 > **This file is the source of truth for progress.** Update it in the same change as the code.
 > Requirements live in [PRD.md](PRD.md). Test IDs are defined in [TESTING_STRATEGY.md](TESTING_STRATEGY.md). Audits live in [audits/](audits/).
 
-**Last updated:** 2026-11-13 · **Current phase:** Phase 2 — Filesystem engine (complete) → next: Phase 3
+**Last updated:** 2026-11-14 · **Current phase:** Phase 3 — Rule engine ✅ (next: Phase 4 — Safe operations)
 
 ## Status legend
 
@@ -23,7 +23,7 @@
 | 0 | Planning & docs | ✅ | n/a | [phase-0](audits/phase-0.md) ✅ | 2026-11-13 |
 | 1 | Foundation | ✅ | 62 / 62 (24 Rust · 38 TS) | [phase-1](audits/phase-1.md) ✅ | 2026-11-13 |
 | 2 | Filesystem engine | ✅ | 91 / 91 (77 Rust · 14 TS) | [phase-2](audits/phase-2.md) ✅ | 2026-11-13 |
-| 3 | Rule engine | ⬜ | 0 / 40 | ⬜ | — |
+| 3 | Rule engine | ✅ | 67 / 40 (55 Rust · 12 TS) | [phase-3](audits/phase-3.md) ✅ | 2026-11-14 |
 | 4 | Safe operations | ⬜ | 0 / 42 | ⬜ | — |
 | 5 | Preview & automation | ⬜ | 0 / 30 | ⬜ | — |
 | 6 | Advanced features | ⬜ | 0 / 30 | ⬜ | — |
@@ -140,18 +140,24 @@ Every phase runs this loop. A phase is **not** done until all 8 steps are checke
 
 | ID | Task | Tests first | Status |
 |---|---|---|---|
-| P3-T01 | Rule models (serde, versioned): `ConditionNode::{All, Any, Not, Leaf}`, `Action`, `ExecutionMode` | R-RULE-01..03 | ⬜ |
-| P3-T02 | Condition evaluators: text, size, date (tz-aware, injectable clock), location, advanced | R-COND-01..15 (+proptest) | ⬜ |
-| P3-T03 | Group logic AND/OR/NOT, nesting depth ≤ 5, short-circuit | R-GRP-01..05 (+proptest) | ⬜ |
-| P3-T04 | Rule validation: regex compile + size limit, empty groups, unsafe actions, destination loops | R-VAL-01..06 | ⬜ |
-| P3-T05 | Template engine: variables, date source, sanitization, path validation, root containment | R-TPL-01..08 (+proptest) | ⬜ |
-| P3-T06 | Evaluator: priority order, execution modes, apply-another-rule with cycle + depth limit, per-pass move limit | R-EVAL-01..06 | ⬜ |
-| P3-T07 | Rules CRUD commands + persistence + stats columns | R-RULE-04..06 | ⬜ |
-| P3-T08 | Starter/smart rule templates (PDF, screenshots, images, videos, archives, invoices, old downloads) — all disabled | R-TMPL-01..03 | ⬜ |
-| P3-T09 | Rules list screen (enable, reorder priority, duplicate, delete w/ confirm) | UI-RULES-01..03 | ⬜ |
-| P3-T10 | Rule Builder UI: conditions tree editor, actions list, inline validation, live template preview | UI-RB-01..06 | ⬜ |
+| P3-T01 | Rule models (serde, versioned): `ConditionNode::{All, Any, Not, Leaf}`, `Action`, `ExecutionMode` | R-RULE-01..03 | ✅ |
+| P3-T02 | Condition evaluators: text, size, date (tz-aware, injectable clock), location, advanced | R-COND-01..15 (+proptest) | ✅ |
+| P3-T03 | Group logic AND/OR/NOT, nesting depth ≤ 5, short-circuit | R-GRP-01..05 (+proptest) | ✅ |
+| P3-T04 | Rule validation: regex compile + size limit, empty groups, unsafe actions, destination loops | R-VAL-01..06 | ✅ |
+| P3-T05 | Template engine: variables, date source, sanitization, path validation, root containment | R-TPL-01..08 (+proptest) | ✅ |
+| P3-T06 | Evaluator: priority order, execution modes, apply-another-rule with cycle + depth limit, per-pass move limit | R-EVAL-01..06 | ✅ |
+| P3-T07 | Rules CRUD commands + persistence + stats columns | R-RULE-04..06 | ✅ |
+| P3-T08 | Starter/smart rule templates (PDF, screenshots, images, videos, archives, invoices, old downloads) — all disabled | R-TMPL-01..03 | ✅ |
+| P3-T09 | Rules list screen (enable, reorder priority, duplicate, delete w/ confirm) | UI-RULES-01..03 | ✅ |
+| P3-T10 | Rule Builder UI: conditions tree editor, actions list, inline validation, live template preview | UI-RB-01..06 | ✅ |
 
-**Exit criteria:** spec §6.2 example evaluates correctly; proptests pass 10k cases; builder creates/edits nested rules round-trip. Audit-3 recorded.
+**Exit criteria:** spec §6.2 example evaluates correctly; proptests pass 10k cases; builder creates/edits nested rules round-trip. Audit-3 recorded. ✅ Met — see [audits/phase-3.md](audits/phase-3.md).
+
+**Phase 3 notes**
+- `Clock` trait (`SystemClock` + `FixedClock` with DST transition support) lives in `src-tauri/src/utils/clock.rs` (landed early in Phase 3 for FR-045/FR-071; will also serve the Phase 5 scheduler).
+- Promoted `chrono`, `glob`, and `regex` from `Cargo.lock` into `src-tauri/Cargo.toml` (0 new lockfile crates — ADR-015).
+- `RuleService::test_draft_on_folder` (`rules_test_folder`) evaluates a draft rule against scanned files in SQLite with zero filesystem writes (FR-057, NFR-004).
+- Approved destination roots selected via `rules_pick_destination_folder` are validated through `validate_new_root` and persisted in `destination_roots`.
 
 ---
 

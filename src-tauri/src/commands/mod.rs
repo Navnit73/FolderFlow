@@ -4,4 +4,5 @@
 pub mod app;
 pub mod folders;
 pub mod monitoring;
+pub mod rules;
 pub mod settings;
